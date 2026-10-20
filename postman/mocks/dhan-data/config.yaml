@@ -1,0 +1,10 @@
+version: 1
+name: dhan-data
+slug: dhan-data
+protocol: http
+interceptRequests: true
+port: 4901
+scenarios:
+  - name: default
+    path: ./default.js
+    default: true

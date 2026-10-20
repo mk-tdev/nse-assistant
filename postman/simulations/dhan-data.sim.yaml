@@ -1,0 +1,5 @@
+simulation: dhan-data-offline
+routing: path
+mocks:
+  - routeKey: dhan
+    path: ../mocks/dhan-data/config.yaml
