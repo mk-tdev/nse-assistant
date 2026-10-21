@@ -57,3 +57,10 @@ An isolated network-disabled replay of the final 21 October REST snapshot reprod
 Both public screener sources fetched successfully. Preparation accepted 12 unique mapped stocks from 22 candidate rows after liquidity proxies and complete prior-20 morning history checks. A modeled 22 October pre-session rehearsal evaluated the baseline 50 plus those 12 in isolated storage, with all baseline history complete, no cohort errors and zero entries; cold pass 43.508 seconds and warm pass 4.52 seconds. The prepared list may change during the next automatic refresh.
 
 One real OpenAI API smoke request authenticated and returned a schema-valid review using the pinned model. No production paper trades were created by these tests. Active-market latency, data completeness and paper behavior remain to be checked in the next session.
+
+
+## Early planned exit — AWS validation, 21 October 2026
+
+The suite passed 98 tests, typechecking, build and both HTTP suites; one additional targeted configuration test passed for the explicit planned-exit environment variable and rejected unsupported values. New regression cases cover 15:10 exit across every variant, completion gating, planned-open precedence over later intrabar extremes, duplicate ticks, missing selected candles and earlier missing price paths. Legacy omitted configuration retains the original 15:15 behavior.
+
+A network-disabled isolated replay of all 50 stocks on 21 October with `PAPER_EXIT_TIME_IST=15:10` retained all six original entries, stops and targets, and retained all four earlier stop exits. SBILIFE closed at the observed 15:10 open of 1656.20 (gross -4.50); TECHM closed at 1822.20 (gross +8.30). All six outcomes were resolved under modeled timely delivery; gross total -54.42, net unknown. These are validation results for the newly selected exit policy, not live fills or an independent test of a winning strategy. Earlier historical reports keep their legacy exit policy and results.

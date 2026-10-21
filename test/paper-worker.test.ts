@@ -113,3 +113,10 @@ test('legacy-store upgrade refreshes bounded historical baseline provenance with
   assert.ok(report.paper.events.filter(e=>e.kind==='research_signal').every(e=>JSON.parse(String(e.body)).baselineObservations.length===20));
  }finally{h.close();}
 });
+
+test('planned exit environment is explicit, validated and preserves the omitted legacy configuration',async()=>{
+ const old=await loadPaperConfig({});assert.ok(old);assert.equal('exitTime' in old,false);
+ const early=await loadPaperConfig({PAPER_EXIT_TIME_IST:'15:10'});assert.equal(early!.exitTime,'15:10');
+ const legacy=await loadPaperConfig({PAPER_EXIT_TIME_IST:'15:15'});assert.equal(legacy!.exitTime,'15:15');
+ for(const value of ['15:25','15:05',''])await assert.rejects(loadPaperConfig({PAPER_EXIT_TIME_IST:value}));
+});

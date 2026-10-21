@@ -41,3 +41,30 @@ test('volume-only block cannot disable price stop management on an existing posi
  const l=open();entry(l);l.config.calendar.independentlyVerified=false;l.config.acceptScheduledCalendarForResearch=false;
  const n=observe(l,'09:40',{low:98,volume:null});const s=l.tick('TCS',date,n);assert.equal(s.status,'closed');assert.equal(s.exit,99);assert.equal(s.grossPnl,-4);l.close();
 });
+
+test('15:10 planned exit is shared by variants and confirmed only at 15:15, without missing tail bars',()=>{
+ for(const variant of [undefined,'range-hold','range-failure-exit','agent-recovery'] as const){
+  const c={...config(),exitTime:'15:10' as const,...(variant?{variant}:{})};const l=new PaperLedger(':memory:',c);seed(l);
+  let current:ReturnType<PaperLedger['tick']>|undefined;
+  for(let t=at(date,'09:15');t<at(date,'15:10');t+=FIVE){
+   const candle=t<at(date,'09:40')?bar(new Date(t+330*60000).toISOString().slice(11,16)):{start:t,open:104,high:105,low:103,close:104,volume:100};
+   l.observe('TCS',{candle,observedAt:t+FIVE,sourceTime:t+FIVE,source:'synthetic',issues:[]});current=l.tick('TCS',date,t+FIVE);
+  }
+  assert.equal(current!.status,'open');assert.equal(l.tick('TCS',date,at(date,'15:14')).exit,null);
+  const candle={start:at(date,'15:10'),open:104,high:120,low:90,close:104,volume:100};
+  l.observe('TCS',{candle,observedAt:at(date,'15:14'),sourceTime:at(date,'15:14'),source:'incomplete',issues:[]});assert.equal(l.tick('TCS',date,at(date,'15:14')).exit,null);
+  l.observe('TCS',{candle,observedAt:at(date,'15:15')+10000,sourceTime:at(date,'15:15'),source:'completed',issues:[]});
+  const done=l.tick('TCS',date,at(date,'15:15')+10000);assert.equal(done.status,'closed');assert.equal(done.exit,104);assert.equal(done.exitAt,at(date,'15:10'));assert.equal(done.exitReason,'forced_15:10');assert.equal(done.unknownOutcome,false);assert.equal(done.grossPnl,104-done.entry!);
+  const count=l.events(done.id).length;assert.equal(l.tick('TCS',date,at(date,'15:35')).exit,104);assert.equal(l.events(done.id).length,count);assert.equal(l.snapshot(date).assumptions.plannedExitTimeIST,'15:10');l.close();
+ }
+});
+test('missing or earlier missing exit path cannot be repaired by choosing an earlier planned exit',()=>{
+ for(const missingAt of ['09:40','15:10']){const l=new PaperLedger(':memory:',{...config(),exitTime:'15:10'});entry(l);
+  for(let t=at(date,'09:40');t<=at(date,'15:10');t+=FIVE){if(t!==at(date,missingAt)){const candle={start:t,open:103,high:104,low:102,close:103,volume:100};l.observe('TCS',{candle,observedAt:t+FIVE,sourceTime:t+FIVE,source:'synthetic',issues:[]});}l.tick('TCS',date,t+FIVE+10000);}
+  const done=l.tick('TCS',date,at(date,'15:16')+1);assert.equal(done.status,'closed');assert.equal(done.exit,null);assert.equal(done.grossPnl,null);assert.equal(done.unknownOutcome,true);l.close();
+ }
+});
+test('planned exit rejects unsupported time and leaves legacy hashes unchanged when omitted',()=>{
+ assert.throws(()=>new PaperLedger(':memory:',{...config(),exitTime:'15:25' as never}),/INVALID_PAPER_CONFIG/);
+ const l=open();assert.equal(l.snapshot(date).assumptions.plannedExitTimeIST,'15:15');assert.equal('exitTime' in l.config,false);l.close();
+});

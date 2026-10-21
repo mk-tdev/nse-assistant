@@ -38,3 +38,10 @@ The private `/api/paper` report includes `research` with watchlist provenance/re
 Run `node dist/paper-export.js /data/paper-range-hold.sqlite` (or another ledger) for full paper audit. Read `research.sqlite` read-only for recovery/reviewer audits. New exports are separate from historical simulation archives and actual market-session results.
 
 No broker-order endpoints, trade MCP tools, account changes or real orders are implemented. The only authenticated upstream calls are Dhan data and OpenAI Responses; public screen refreshes are read-only calculations. No new public application listener or paid AWS instance is needed.
+
+
+## Planned early paper exit — 22 October deployment
+
+The AWS paper environment now sets `PAPER_EXIT_TIME_IST=15:10` for every cohort, including the Nifty 50 baseline. Entry, stop and target rules remain the same. An open paper position exits at the hypothetical **15:10 IST candle open**, admitted only after that candle completes at **15:15 IST**, plus collection latency. The source price is not an executable live fill. This precedes the observed missing 15:15, 15:20 and 15:25 candle starts. If the selected candle or an earlier exit path is missing/late, the outcome remains unknown; no last close is substituted. A planned exit takes precedence over intrabar stop/target touches in that exit candle, because its price is the earlier open.
+
+Recorder/data-quality collection continues until 15:35 IST so final feed gaps remain visible. The old default is 15:15 when the variable is omitted, preserving prior historical replay configuration and hashes. Historical reports generated before this change retain their original exit policy and results; they are not rewritten as evidence for the new rule. A changed configuration cannot rewrite an existing session ledger.

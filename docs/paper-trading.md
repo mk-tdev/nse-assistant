@@ -1,3 +1,5 @@
+> AWS deployment for 22 October 2026 explicitly uses `PAPER_EXIT_TIME_IST=15:10` across all cohorts: hypothetical 15:10 open, admitted after completion at 15:15 IST. The recorder continues through 15:35. Omission retains the legacy 15:15 exit described below; historical reports keep their original policy. See [research cohorts](research-cohorts.md#planned-early-paper-exit--22-october-deployment).
+
 # Recorder and automatic paper loop
 
 All times below are IST. Nothing in this runbook has been deployed by the cloud implementation task. Node 24 is required. Broker orders are not implemented.

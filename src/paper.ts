@@ -13,6 +13,7 @@ export type PaperCalendar = {
   independentlyVerified: boolean;
 };
 export type PaperConfig = {
+  exitTime?: '15:10'|'15:15';
   variant?: 'range-hold'|'range-failure-exit'|'agent-recovery';
   mode: PaperMode;
   quantity: number;
@@ -49,7 +50,7 @@ export class PaperLedger {
   readonly db: DatabaseSync;
   readonly configHash: string;
   constructor(path: string, readonly config: PaperConfig) {
-    if (!['strict','approximate-research'].includes(config.mode) || !Number.isSafeInteger(config.quantity) || config.quantity < 1 ||
+    if (config.exitTime!==undefined&&!['15:10','15:15'].includes(config.exitTime) || !['strict','approximate-research'].includes(config.mode) || !Number.isSafeInteger(config.quantity) || config.quantity < 1 ||
       !Number.isFinite(config.maxObservationDelayMs) || config.maxObservationDelayMs < 0 ||
       !validDate(config.calendar.coverageFrom) || !validDate(config.calendar.coverageTo) || config.calendar.coverageFrom>config.calendar.coverageTo ||
       config.calendar.sessions.some(d=>!validDate(d)||d<config.calendar.coverageFrom||d>config.calendar.coverageTo) ||
@@ -138,6 +139,7 @@ export class PaperLedger {
         acceptStartLabelsForResearch:this.config.acceptStartLabelsForResearch,
         acceptScheduledCalendarForResearch:this.config.acceptScheduledCalendarForResearch,
         vwapMethod:'HLC3 completed-bar approximation in research mode only',quantity:this.config.quantity,
+        plannedExitTimeIST:this.config.exitTime??'15:15',plannedExitConfirmationIST:this.config.exitTime==='15:10'?'15:15':'15:20',plannedExitPrice:'planned candle open, admitted only after that candle completes',
         feesPerSide:this.config.feesPerSide,slippageBps:this.config.slippageBps,maxObservationDelayMs:this.config.maxObservationDelayMs},
       baselineProvenance:this.db.prepare('SELECT evaluation_session,symbol,COUNT(*) AS observations,MAX(observed_at) AS last_observed_at FROM paper_baselines WHERE evaluation_session=? GROUP BY evaluation_session,symbol').all(session),
       baselinePolicy:'Fresh historical REST observations are separate from original execution observations; never exact verification',
@@ -170,6 +172,7 @@ export class PaperLedger {
     };
     if(s.status==='closed') return persist();
     const cfg=this.config, cal=cfg.calendar, research=cfg.mode==='approximate-research';
+    const plannedExitTime=cfg.exitTime??'15:15',plannedExit=at(session,plannedExitTime),plannedExitComplete=plannedExit+FIVE;
     const gates:string[]=[];
     if(changed)gates.push('configuration_changed_for_existing_session');
     if(!saved && this.list().some(other=>other.symbol===symbol&&other.session===session&&other.id!==id&&other.signal!==null))
@@ -207,7 +210,7 @@ export class PaperLedger {
         if(!o && now<=t+FIVE+cfg.maxObservationDelayMs) return block([`awaiting_completed_candle/${new Date(t).toISOString()}`]);
         if(s.status==='open') {
           s.unknownOutcome=true;s.exitReason='missing_or_invalid_exit_path';
-          if(now>=at(session,'15:20')) {s.status='closed';s.exitReason='unresolved_exit_data';}
+          if(now>=plannedExitComplete) {s.status='closed';s.exitReason='unresolved_exit_data';}
           this.event(s,`unknown/${t}`,now,t,'unknown_outcome',{missingSlot:t});
         }
         if(s.status==='pending-entry' && now>t+FIVE+cfg.maxObservationDelayMs){
@@ -221,12 +224,12 @@ export class PaperLedger {
       if(s.status==='open') {
         if(s.unknownOutcome) {
           // Never establish an exit from a later, revised or backfilled path.
-          if(now>=at(session,'15:20')) {s.status='closed';s.exitReason='unresolved_exit_data';this.event(s,'unknown-final',now,null,'closed',{...s});s.cursor=t;break;}
+          if(now>=plannedExitComplete) {s.status='closed';s.exitReason='unresolved_exit_data';this.event(s,'unknown-final',now,null,'closed',{...s});s.cursor=t;break;}
           s.cursor=t;continue;
         }
         let exit:number|null=null, reason:string|null=null, exitAt=t+FIVE;
-        if(t===at(session,'15:15')){exit=c.open;reason='forced_15:15';exitAt=t;}
-        else if(t>at(session,'15:15')) {s.unknownOutcome=true;reason='missing_forced_exit';}
+        if(t===plannedExit){exit=c.open;reason='forced_'+plannedExitTime;exitAt=t;}
+        else if(t>plannedExit) {s.unknownOutcome=true;reason='missing_forced_exit';}
         else if(c.open<=s.stop!){exit=c.open;reason='gap_stop';exitAt=t;}
         else if(c.open>=s.target!){exit=s.target;reason='gap_target_capped';exitAt=t;}
         else if(cfg.variant==='range-failure-exit'&&s.invalidatedAt!==undefined&&t>=s.invalidatedAt){exit=c.open;reason='range_failure_next_open';exitAt=t;}
@@ -279,7 +282,7 @@ export class PaperLedger {
       }
       s.cursor=t;
     }
-    if(s.status==='open'&&now>=at(session,'15:20')&&!byStart.has(at(session,'15:15'))){
+    if(s.status==='open'&&now>=plannedExitComplete&&!byStart.has(plannedExit)){
       s.unknownOutcome=true;s.reasons=['missing_forced_exit_bar'];
     }
     return persist();

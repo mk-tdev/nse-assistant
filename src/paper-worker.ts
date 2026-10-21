@@ -23,8 +23,9 @@ export async function loadPaperConfig(env:NodeJS.ProcessEnv=process.env):Promise
   if(!bool(env.PAPER_ENABLED,true))return null;
   const calendar=paperCalendar(JSON.parse(await readFile(env.PAPER_CALENDAR_PATH??new URL('../deploy/lightsail/calendar-paper-2026.json',import.meta.url),'utf8')));
   const mode=env.PAPER_MODE??'strict';if(mode!=='strict'&&mode!=='approximate-research')throw new Error('PAPER_INVALID_MODE');
+  const exitTime=env.PAPER_EXIT_TIME_IST===undefined?undefined:z.enum(['15:10','15:15']).parse(env.PAPER_EXIT_TIME_IST);
   const nullable=(v:string|undefined)=>v===undefined||v===''?null:Number(v);
-  return {...paperDefaults(calendar),mode,quantity:Number(env.PAPER_QUANTITY??1),feesPerSide:nullable(env.PAPER_FEES_PER_SIDE),
+  return {...paperDefaults(calendar),...(exitTime?{exitTime}:{}),mode,quantity:Number(env.PAPER_QUANTITY??1),feesPerSide:nullable(env.PAPER_FEES_PER_SIDE),
     slippageBps:nullable(env.PAPER_SLIPPAGE_BPS),maxObservationDelayMs:Number(env.PAPER_MAX_OBSERVATION_DELAY_SECONDS??60)*1000,
     acceptScheduledCalendarForResearch:bool(env.PAPER_ACCEPT_SCHEDULED_CALENDAR),acceptStartLabelsForResearch:bool(env.PAPER_ACCEPT_START_LABELS),
     timestampSemanticsVerified:bool(env.DHAN_CANDLE_START_VERIFIED)};

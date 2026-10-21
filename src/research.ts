@@ -31,7 +31,7 @@ export class ResearchCoordinator{
   return this.snapshot(report,errors);
  }
  snapshot(report:SessionReport,errors:string[]=[]){
-  return {simulatedOnly:true,baseline:'Nifty50 orb-long-v1 unchanged; raw observations only',observedAt:new Date(this.clock()).toISOString(),watchlists:this.watchlists,watchlistError:this.watchlistError,selection:'Independent comparison ledgers; do not sum cohorts as one portfolio',cohorts:this.cohorts.map(c=>({name:c.name,symbols:c.instruments.map(i=>i.symbol),...c.ledger.snapshot(this.date,true),scanner:{...scanUniverse(c.worker.recorder,c.ledger,report,this.clock()),universe:c.name}})),recovery:this.recovery.snapshot(),reviewer:this.reviewer.snapshot(),errors};
+  return {simulatedOnly:true,baseline:'Nifty50 orb-long-v1 entry rules; raw observations and shared configured planned exit',observedAt:new Date(this.clock()).toISOString(),watchlists:this.watchlists,watchlistError:this.watchlistError,selection:'Independent comparison ledgers; do not sum cohorts as one portfolio',cohorts:this.cohorts.map(c=>({name:c.name,symbols:c.instruments.map(i=>i.symbol),...c.ledger.snapshot(this.date,true),scanner:{...scanUniverse(c.worker.recorder,c.ledger,report,this.clock()),universe:c.name}})),recovery:this.recovery.snapshot(),reviewer:this.reviewer.snapshot(),errors};
  }
  async close(){await this.reviewer.drain();for(const c of this.cohorts)c.ledger.close();this.recovery.close();}
 }

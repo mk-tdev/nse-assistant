@@ -52,3 +52,7 @@ Production uses `RECORDER_UNIVERSE=nifty50` in `/etc/nse-assistant/paper.env`. K
 See [research cohorts](../../docs/research-cohorts.md). Enable research explicitly in `paper.env`, configure the frozen dated watchlist path, and keep the OpenAI key in the separate root-only `reviewer.env`. The recorder service reads that file; the report service receives neither provider key. Install and enable `nse-watchlists.timer` to refresh sources and baseline history at 08:50 IST before the existing 09:05 recorder launch. Watchlist preparation uses the same host/container lock and exits visibly if preparation fails. Missing or invalid watchlists do not replace the original 50-stock baseline.
 
 Persistent comparison ledgers are `paper-screener-orb.sqlite`, `paper-range-hold.sqlite`, `paper-range-failure-exit.sqlite`, `paper-agent-recovery.sqlite` and `research.sqlite`; include them in consistent backups. Comparison ledgers are independent, not one combined portfolio.
+
+## Early planned paper exit
+
+Set `PAPER_EXIT_TIME_IST=15:10` in protected `paper.env` to apply the earlier planned exit to the baseline and every research cohort. The price is the 15:10 candle open, confirmed after that candle completes at 15:15 IST. Recording continues until 15:35; missing data remains visible. Omission retains legacy 15:15 behavior. Change this configuration before the session, not to rewrite an existing ledger.

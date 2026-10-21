@@ -6,6 +6,8 @@ Isolated TypeScript project for NSE cash-equity paper analysis, starting **Wedne
 
 The optional [research cohorts](docs/research-cohorts.md) retain the Nifty 50 baseline and add frozen Chartink/Screener watchlists, second-close hold and range-failure exit variants, and a separate recovery ledger with bounded OpenAI reviews. All outcomes are simulated; recovered late prices never authorize retroactive fills. See the runbook for persistent storage, private reports, limits and morning preparation.
 
+AWS paper cohorts use a planned 15:10 IST opening-price exit, confirmed when that candle completes at 15:15. Recording continues through the close; absent prices still leave unknown outcomes. See the research runbook for the legacy default and timing assumptions.
+
 ## Run locally
 
 Requires Node.js 24+ and npm. Clone this repository, then install and verify:
