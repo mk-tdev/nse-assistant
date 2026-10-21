@@ -8,6 +8,30 @@ const server = http.createServer((req, res) => {
   const url = new URL(req.url || '', 'http://localhost');
   const pathname = url.pathname;
 
+  // Recorder-only synthetic HTTP scenarios. Never send live credentials to this mock.
+  if (req.headers['x-recorder-fixture']) {
+    const mode = req.headers['x-recorder-fixture'];
+    if (req.method === 'GET' && pathname === '/api-data/api-scrip-master-detailed.csv') {
+      res.writeHead(200, {'Content-Type':'text/csv'});
+      return res.end('EXCH_ID,SEGMENT,SECURITY_ID,INSTRUMENT,UNDERLYING_SYMBOL,SYMBOL_NAME,DISPLAY_NAME,SERIES\nNSE,E,1333,EQUITY,HDFCBANK,Synthetic Bank Limited,Synthetic HDFCBANK,EQ\nNSE,E,11536,EQUITY,TCS,Synthetic Technology Limited,Synthetic TCS,EQ\n');
+    }
+    if (req.method === 'POST' && pathname === '/v2/charts/intraday') {
+      if (['401','429','500'].includes(mode)) {res.writeHead(Number(mode),{'Content-Type':'text/html'});return res.end('<p>synthetic upstream failure</p>');}
+      let body='';req.on('data',chunk=>body+=chunk);req.on('end',()=>{
+        const request=JSON.parse(body);
+        const lower=Date.parse(request.fromDate.replace(' ','T')+'+05:30');
+        const upper=Date.parse(request.toDate.replace(' ','T')+'+05:30');
+        let rows=Array.from({length:75},(_,i)=>({timestamp:(Date.parse('2026-10-21T09:15:00+05:30')+i*300000)/1000,open:100,high:102,low:99,close:mode==='revised'&&i===0?100.5:101,volume:1000+i})).filter(c=>c.timestamp*1000>lower&&c.timestamp*1000<upper);
+        if(mode==='gap')rows=rows.slice(0,-3);
+        if(mode==='duplicate')rows.splice(1,0,rows[0]);
+        if(mode==='invalid'&&rows[0])rows[0].low=999;
+        const data=Object.fromEntries(['timestamp','open','high','low','close','volume'].map(k=>[k,rows.map(r=>r[k])]));
+        res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify(data));
+      });return;
+    }
+    res.writeHead(501);return res.end();
+  }
+
   if (req.method === 'GET' && pathname === '/api-data/api-scrip-master-detailed.csv') {
     res.writeHead(200, {'Content-Type':'text/csv'});
     return res.end('EXCH_ID,SEGMENT,SECURITY_ID,INSTRUMENT,SYMBOL_NAME,DISPLAY_NAME,SERIES\nNSE,E,999001,EQUITY,MOCK_EQ,Synthetic Equity,EQ\n');

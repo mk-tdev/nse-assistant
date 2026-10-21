@@ -32,6 +32,17 @@ A **review-only** host configuration example follows. This was not installed in 
 
 Creating this server does **not** make its tools available in another chat. Host registration, supported transports, permissions and tool discovery must be checked separately. No connector, OAuth grant or host configuration was changed.
 
+## Read-only session recorder (HDFCBANK and TCS)
+
+A separate foreground worker records completed five-minute candles to SQLite and writes per-symbol data-quality reports. It never places orders or emits strategy signals. Run `npm run check` first, then:
+
+```sh
+npm run record -- --live --date 2026-10-21
+npm run record -- --report --date 2026-10-21
+```
+
+The command explicitly loads `.env.local`; select the intended session date and keep the computer awake. Defaults: 30-second polling, 10-second settlement allowance, and private gitignored storage under `.local/recorder/live/`. It stops after the session-close grace period. Mock demonstrations use separate storage. See [the recorder runbook](docs/session-recorder.md) for timing, error handling, restart behavior, synthetic HTTP tests and next-session checks. The existing MCP `npm start` entry point still does not load environment files automatically.
+
 ## Tool contract
 
 All four tools advertise `readOnlyHint: true`; none accepts credentials, an arbitrary URL, an endpoint path, or an HTTP method. Scope is deliberately restricted to NSE EQ-series cash equities. Resolve an instrument before using its ID.
@@ -92,9 +103,13 @@ Checked against public official documentation during implementation (19 October 
 
 Only three upstream method/URL pairs are allowlisted in `src/dhan.ts`: the public CSV GET and the quote/intraday POSTs. All redirects are rejected; credential headers are never attached to the public CSV. No generic proxy exists. Exceptions exposed through MCP use fixed codes, and startup diagnostics omit exception details; the redactor also removes secret fields and known literal tokens. Debug request/body/header logging must remain disabled.
 
-## Secure remote transport option (documented, not enabled)
+## Lightsail recorder deployment
 
-Use MCP **Streamable HTTP** with the same `createServer` tool definitions behind a reviewed HTTPS endpoint and separate MCP authorization. No HTTP listener, tunnel, firewall rule, deployment or persistent service is included or started by this project.
+The [Singapore deployment runbook](deploy/lightsail/README.md) includes a Docker image, market-session scheduler, persistent host storage and a quality-report viewer accessed through SSH. Instance `nse-recorder` was deployed using AWS profile `default` following approval of the US$12/month plan. Local access instructions are in `.local/deploy/ACCESS.md`. The worker requires a current Dhan access token; token renewal is not automated.
+
+## Secure remote MCP transport option (documented, not enabled)
+
+Use MCP **Streamable HTTP** with the same `createServer` tool definitions behind a reviewed HTTPS endpoint and separate MCP authorization. No remote MCP listener or authentication has been implemented. The separate read-only report viewer in the Lightsail package uses SSH access.
 
 Before implementation/deployment, a separate user-approved security setup must choose a supported host/client and auth provider. Use the official SDK's `@modelcontextprotocol/node` adapter or Web-standard handler for the negotiated protocol version. Require TLS, validate Host and Origin with an explicit allowlist (invalid Origin → 403), and bind any local upstream listener to 127.0.0.1. Validate short-lived MCP access tokens, issuer, audience/resource and appropriate data-read scope on every call; use protected-resource metadata and the MCP authorization flow supported by the client. Deny unauthenticated requests. Keep broker credentials entirely server-side and separate from MCP tokens. Do not pass through a client's bearer token to Dhan. Restrict access to the user's private market data, enforce rate limits, disable public caching and redact authorization in proxy/application logs. Treat any sharing/redistribution rights as an unresolved operational check before sharing data.
 

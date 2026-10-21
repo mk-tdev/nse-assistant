@@ -1,0 +1,11 @@
+[Unit]
+Description=Start NSE recorder on scheduled weekday mornings (IST)
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* 09:05:00 Asia/Kolkata
+Persistent=true
+AccuracySec=1s
+Unit=nse-recorder.service
+
+[Install]
+WantedBy=timers.target

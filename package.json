@@ -13,7 +13,9 @@
     "test": "node --import tsx --test test/*.test.ts",
     "start": "node dist/stdio.js",
     "check": "npm run typecheck && npm test && npm run build",
-    "test:http": "node --import tsx test/http-simulation.ts"
+    "test:http": "node --import tsx test/http-simulation.ts",
+    "record": "node --env-file-if-exists=.env.local dist/record.js",
+    "test:recorder:http": "node --import tsx test/recorder-http-simulation.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "2.3.1",

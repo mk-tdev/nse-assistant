@@ -1,0 +1,16 @@
+[Unit]
+Description=NSE read-only quality reports (loopback only)
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/docker run --rm --init --name nse-reports --read-only --cap-drop=ALL --security-opt=no-new-privileges --env PORT=8787 --env REPORT_BIND=0.0.0.0 --env RECORDER_DATA_DIR=/data --publish 127.0.0.1:8787:8787 --mount type=bind,source=/var/lib/nse-recorder,target=/data,readonly nse-recorder:local node dist/report-server.js
+ExecStop=-/usr/bin/docker stop --time 10 nse-reports
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

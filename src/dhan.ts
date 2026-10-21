@@ -55,7 +55,7 @@ export class DhanProvider implements Provider {
     if(this.master && Date.now()-this.master.fetchedAt<3_600_000)return this.master;
     const response=await this.request('instruments');
     const rows=parse(await response.text(),{columns:true,skip_empty_lines:true,bom:true}) as Record<string,string>[];
-    const items:Instrument[]=rows.filter(r=>r.EXCH_ID==='NSE' && r.SEGMENT==='E' && r.INSTRUMENT==='EQUITY' && r.SERIES==='EQ').map(r=>({securityId:r.SECURITY_ID??'',symbol:r.SYMBOL_NAME??'',name:r.DISPLAY_NAME??'',exchangeSegment:'NSE_EQ',instrument:'EQUITY'}));
+    const items:Instrument[]=rows.filter(r=>r.EXCH_ID==='NSE' && r.SEGMENT==='E' && r.INSTRUMENT==='EQUITY' && r.SERIES==='EQ').map(r=>({securityId:r.SECURITY_ID??'',symbol:r.UNDERLYING_SYMBOL||r.SYMBOL_NAME||'',name:r.DISPLAY_NAME??'',exchangeSegment:'NSE_EQ',instrument:'EQUITY'}));
     if(!items.length || items.some(i=>!/^\d+$/.test(i.securityId)||!i.symbol))throw new Error('DHAN_INVALID_INSTRUMENT_MASTER');
     return this.master={items,fetchedAt:Date.now()};
   }
