@@ -54,7 +54,7 @@ export class PaperLedger {
       [config.feesPerSide,config.slippageBps].some(x=>x!==null && (!Number.isFinite(x) || x<0))) throw new Error('INVALID_PAPER_CONFIG');
     this.configHash=hash(config);
     this.db=new DatabaseSync(path);
-    this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;
+    this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; PRAGMA temp_store=MEMORY;
       CREATE TABLE IF NOT EXISTS paper_observations (
         symbol TEXT NOT NULL, start INTEGER NOT NULL, fingerprint TEXT NOT NULL, observed_at INTEGER NOT NULL,
         body TEXT NOT NULL, PRIMARY KEY(symbol,start,fingerprint));

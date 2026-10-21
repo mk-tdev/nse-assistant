@@ -1,6 +1,6 @@
 # Our NSE opening-range strategy
 
-An explanation of the existing code and the implemented automatic simulated paper workflow. Updated 21 October 2026. This document does not start a monitor, connect a feed, or place an order. All example prices below are fictional.
+An explanation of the existing code and the implemented automatic simulated paper workflow. AWS production evaluates all 50 Nifty 50 constituents independently; see [the universe/scanner runbook](nifty50-paper.md). Updated 21 October 2026. This document does not start a monitor, connect a feed, or place an order. All example prices below are fictional.
 
 ## What can we do with what we have?
 

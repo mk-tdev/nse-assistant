@@ -32,7 +32,9 @@ A **review-only** host configuration example follows. This was not installed in 
 
 Creating this server does **not** make its tools available in another chat. Host registration, supported transports, permissions and tool discovery must be checked separately. No connector, OAuth grant or host configuration was changed.
 
-## Read-only session recorder (HDFCBANK and TCS)
+## Read-only session recorder and Nifty 50 scanner
+
+AWS production now scans every stock in the official Nifty 50 snapshot; see [the scanner runbook](docs/nifty50-paper.md). Set `RECORDER_UNIVERSE=nifty50` in the service environment. The unconfigured synthetic validation command retains HDFCBANK/TCS.
 
 A separate foreground worker records completed five-minute candles to SQLite and writes per-symbol data-quality reports. It never places orders or claims exact strategy qualification. It also runs the strict-default paper worker; explicitly opted-in research can record hypothetical signals and positions. Run `npm run check` first, then:
 

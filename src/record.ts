@@ -8,8 +8,9 @@ import {DhanProvider} from './dhan.js';
 import {at,FIVE,validDate} from './model.js';
 import {CandleStore,SessionRecorder,resolveWatchlist,safeRecorderError} from './recorder.js';
 import {recorderMock} from './recorder-mock.js';
+import {loadUniverse} from './universe.js';
 
-const help=`HDFCBANK/TCS recorder and simulated-only paper loop (no broker orders; strict gated default).
+const help=`Configurable universe recorder and simulated-only paper loop (no broker orders; strict gated default).
 Usage: npm run record -- --live --date YYYY-MM-DD [--once] [--interval 30] [--data-dir .local/recorder/live]
        npm run record -- --mock --date YYYY-MM-DD --once
        npm run record -- --report --date YYYY-MM-DD
@@ -41,15 +42,17 @@ export async function main(args=process.argv.slice(2)){
   try{
     const mode=options.has('--live')?'live':'mock';
     const provider=mode==='live'?new DhanProvider({clientId:process.env.DHAN_CLIENT_ID??'',token:process.env.DHAN_ACCESS_TOKEN??'',candleStartVerified:process.env.DHAN_CANDLE_START_VERIFIED==='true',quoteTimezoneVerified:false}):recorderMock(date);
-    const instruments=resolveWatchlist((await provider.instruments()).items);
+    const universe=await loadUniverse(date);
+    const instruments=resolveWatchlist((await provider.instruments()).items,universe?.constituents.map(c=>c.symbol));
     store=new CandleStore(dbPath);await chmod(dbPath,0o600);
-    const recorder=new SessionRecorder(store,provider,instruments,date,mode);
+    const recorder=new SessionRecorder(store,provider,instruments,date,mode,10,universe??undefined);
     let worker:PaperSessionWorker|undefined,paperSetupError:string|undefined;
     try {
       const config=await loadPaperConfig();
       if(config){ledger=new PaperLedger(join(dir,'paper.sqlite'),config);await chmod(join(dir,'paper.sqlite'),0o600);worker=new PaperSessionWorker(recorder,ledger,mode==='mock'?()=>at(date,'10:00')+10000:Date.now);}
     }catch{paperSetupError='PAPER_CONFIGURATION_OR_STORAGE_FAILED';}
     while(!stopping){
+      const cycleStarted=Date.now();
       const now=mode==='mock'?at(date,'10:00')+10000:Date.now();
       // A paper fault cannot stop the recorder; all setup errors remain visible and no new fills are made.
       const report=worker?await worker.poll():await recorder.poll(now);
@@ -61,7 +64,7 @@ export async function main(args=process.argv.slice(2)){
       console.log(JSON.stringify({observedAt:report.observedAt,sessionDate:date,mode,phase:report.phase,instruments:report.instruments.map(i=>({symbol:i.symbol,status:i.status,stored:i.storedCandles,expected:i.expectedCandles,missing:i.missingSlots.length,missingVolume:i.missingVolumeSlots.length,revised:i.revisedCandles,error:i.error})),report:target}));
       const unhealthy=report.instruments.some(i=>i.status==='fetch_error'||i.status==='missing_data');
       if(options.has('--once')||mode==='mock'||(!worker&&report.instruments.some(i=>i.error==='DHAN_HTTP_401'||i.error==='DHAN_HTTP_403'))||now>=at(date,'15:30')+FIVE){process.exitCode=unhealthy?2:0;break;}
-      await new Promise<void>(resolve=>{const timer=setTimeout(()=>{wake=undefined;resolve();},interval*1000);wake=()=>{clearTimeout(timer);wake=undefined;resolve();};if(stopping)wake();});
+      await new Promise<void>(resolve=>{const timer=setTimeout(()=>{wake=undefined;resolve();},Math.max(0,interval*1000-(Date.now()-cycleStarted)));wake=()=>{clearTimeout(timer);wake=undefined;resolve();};if(stopping)wake();});
     }
   }finally{ledger?.close();store?.close();lock.close();process.off('SIGINT',stop);process.off('SIGTERM',stop);}
 }

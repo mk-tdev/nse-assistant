@@ -1,6 +1,7 @@
 import {DatabaseSync} from 'node:sqlite';
 import {at,day,FIVE,validCandle,validDate,type Candle,type Instrument,type Batch} from './model.js';
 import type {Provider} from './dhan.js';
+import type {Universe} from './universe.js';
 
 export const WATCHLIST = ['HDFCBANK','TCS'] as const;
 export type InstrumentReport = {
@@ -10,25 +11,28 @@ export type InstrumentReport = {
   excludedIncomplete:number;newCandles:number;revisedCandles:number;error:string|null;
   timestampSemantics:'operator_verified_start'|'unverified_start_interpretation';
 };
-export type SessionReport = {sessionDate:string;observedAt:string;mode:'live'|'mock';source:string;timeZone:'Asia/Kolkata';calendarVerified:false;strategyEnabled:false;phase:'before_open'|'session'|'after_close';instruments:InstrumentReport[]};
+export type SessionReport = {sessionDate:string;observedAt:string;mode:'live'|'mock';source:string;timeZone:'Asia/Kolkata';calendarVerified:false;strategyEnabled:false;phase:'before_open'|'session'|'after_close';universe?:Universe;instruments:InstrumentReport[]};
 const iso=(t:number)=>new Date(t).toISOString();
 export function safeRecorderError(error:unknown):string {
   const message=error instanceof Error?error.message:'';
   return /^(DHAN_[A-Z_0-9]+|LIVE_CREDENTIALS_NOT_CONFIGURED|UNKNOWN_NSE_EQUITY_SECURITY_ID|RECORDER_[A-Z_]+)$/.test(message)?message:'RECORDER_FETCH_OR_SCHEMA_ERROR';
 }
-export function resolveWatchlist(items:Instrument[]):Instrument[]{
-  return WATCHLIST.map(symbol=>{
+export function resolveWatchlist(items:Instrument[],symbols:readonly string[]=WATCHLIST):Instrument[]{
+  if(!symbols.length||symbols.length>50||new Set(symbols).size!==symbols.length)throw new Error('RECORDER_INVALID_WATCHLIST');
+  const result=symbols.map(symbol=>{
     const matches=items.filter(i=>i.exchangeSegment==='NSE_EQ'&&i.instrument==='EQUITY'&&i.symbol.replace(/-EQ$/,'')===symbol);
     const ids=[...new Set(matches.map(i=>i.securityId))];
     if(ids.length!==1)throw new Error('RECORDER_INSTRUMENT_MAPPING_FAILED');
     return {...matches[0]!,symbol};
   });
+  if(new Set(result.map(i=>i.securityId)).size!==result.length)throw new Error('RECORDER_INSTRUMENT_MAPPING_FAILED');
+  return result;
 }
 export class CandleStore {
   readonly db:DatabaseSync;
   constructor(path:string,readOnly=false){
     this.db=new DatabaseSync(path,{readOnly});
-    this.db.exec('PRAGMA busy_timeout=5000;');
+    this.db.exec('PRAGMA busy_timeout=5000; PRAGMA temp_store=MEMORY;');
     if(readOnly)return;
     this.db.exec(`PRAGMA journal_mode=WAL;
       CREATE TABLE IF NOT EXISTS candle_batches(session TEXT NOT NULL,security_id TEXT NOT NULL,observed_at INTEGER NOT NULL,body TEXT NOT NULL,PRIMARY KEY(session,security_id,observed_at));
@@ -36,6 +40,7 @@ export class CandleStore {
       CREATE TABLE IF NOT EXISTS candles(session TEXT NOT NULL,security_id TEXT NOT NULL,symbol TEXT NOT NULL,source_epoch_ms INTEGER NOT NULL,open REAL NOT NULL,high REAL NOT NULL,low REAL NOT NULL,close REAL NOT NULL,volume REAL,first_observed_at INTEGER NOT NULL,last_observed_at INTEGER NOT NULL,PRIMARY KEY(session,security_id,source_epoch_ms));
       CREATE TABLE IF NOT EXISTS revisions(id INTEGER PRIMARY KEY,session TEXT NOT NULL,security_id TEXT NOT NULL,source_epoch_ms INTEGER NOT NULL,observed_at INTEGER NOT NULL,previous_json TEXT NOT NULL,replacement_json TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS polls(id INTEGER PRIMARY KEY,session TEXT NOT NULL,observed_at INTEGER NOT NULL,report_json TEXT NOT NULL);
+      CREATE INDEX IF NOT EXISTS candles_recent_updates ON candles(last_observed_at);
       CREATE TABLE IF NOT EXISTS fetches(session TEXT NOT NULL,security_id TEXT NOT NULL,last_success_at INTEGER NOT NULL,PRIMARY KEY(session,security_id));`);
   }
   bind(mode:string,source:string){
@@ -81,14 +86,14 @@ export class CandleStore {
   }
 }
 export class SessionRecorder {
-  constructor(readonly store:CandleStore,readonly provider:Provider,readonly instruments:Instrument[],readonly date:string,readonly mode:'live'|'mock',readonly settleSeconds=10){
+  constructor(readonly store:CandleStore,readonly provider:Provider,readonly instruments:Instrument[],readonly date:string,readonly mode:'live'|'mock',readonly settleSeconds=10,readonly universe?:Universe){
     if(!validDate(date)||!Number.isFinite(settleSeconds)||settleSeconds<0||settleSeconds>60)throw new Error('RECORDER_INVALID_CONFIGURATION');
     store.bind(mode,provider.source);
   }
   async poll(now=Date.now()):Promise<SessionReport>{
     const open=at(this.date,'09:15'),close=at(this.date,'15:30');
     const expectedEnd=Math.max(open,Math.min(close,Math.floor((now-this.settleSeconds*1000)/FIVE)*FIVE));
-    const report:SessionReport={sessionDate:this.date,observedAt:iso(now),mode:this.mode,source:this.provider.source,timeZone:'Asia/Kolkata',calendarVerified:false,strategyEnabled:false,phase:now<open?'before_open':now<close?'session':'after_close',instruments:[]};
+    const report:SessionReport={sessionDate:this.date,observedAt:iso(now),mode:this.mode,source:this.provider.source,timeZone:'Asia/Kolkata',calendarVerified:false,strategyEnabled:false,phase:now<open?'before_open':now<close?'session':'after_close',...(this.universe?{universe:this.universe}:{}),instruments:[]};
     for(const instrument of this.instruments){
       let batch:Batch|null=null,error:string|null=null,added=0,revised=0,excluded=0,accepted:Candle[]|null=null;
       if(expectedEnd>open){

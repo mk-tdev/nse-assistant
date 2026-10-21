@@ -12,6 +12,6 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 COPY --from=build /app/dist ./dist
-COPY deploy/lightsail/calendar*.json ./deploy/lightsail/
+COPY deploy/lightsail/*.json ./deploy/lightsail/
 USER node
 CMD ["node", "dist/market-session.js"]

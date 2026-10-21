@@ -36,7 +36,7 @@ class Gate {
   }
 }
 // Shared across instances in this process. Multiple processes require a shared limiter before live use.
-const quoteGate=new Gate(1000,100000),historyGate=new Gate(200,100000);
+const quoteGate=new Gate(1000,100000),historyGate=new Gate(350,100000);
 export class DhanProvider implements Provider {
   source='Dhan REST v2'; private master?:{items:Instrument[];fetchedAt:number};
   constructor(private config:{clientId:string;token:string;candleStartVerified:boolean;quoteTimezoneVerified:boolean},private fetcher:Fetcher=fetch) {

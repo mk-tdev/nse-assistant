@@ -1,3 +1,4 @@
+import {scanUniverse} from './scanner.js';
 import { readFile } from 'node:fs/promises';
 import { z } from 'zod';
 import { at, day, FIVE, minute, validCandle, validDate, type Candle } from './model.js';
@@ -29,11 +30,12 @@ export async function loadPaperConfig(env:NodeJS.ProcessEnv=process.env):Promise
     timestampSemanticsVerified:bool(env.DHAN_CANDLE_START_VERIFIED)};
 }
 export type BackfillReport={status:string;calendarSource:string;previousSessions:string[];requestsThisPoll:number;maxRequestsPerPoll:number;maxAttemptsPerSymbolSession:number;missing:{symbol:string;session:string;slots:string[];unprovenancedSlots:string[];attempts:number;error:string|null}[]};
-export type PaperReport=ReturnType<PaperLedger['snapshot']>&{backfill:BackfillReport;errors:string[]};
+export type PaperReport=ReturnType<PaperLedger['snapshot']>&{backfill:BackfillReport;errors:string[];scanner:ReturnType<typeof scanUniverse>};
 export type CombinedReport=SessionReport&{paper:PaperReport};
 
 /** Runs inside the recorder's singleton process, using its provider, store and REST limiter. */
 export class PaperSessionWorker {
+  private historyIngestedThrough=0;
   constructor(readonly recorder:SessionRecorder,readonly ledger:PaperLedger,readonly clock=Date.now,readonly maxBackfillPerPoll=2) {
     if(!Number.isInteger(maxBackfillPerPoll)||maxBackfillPerPoll<0||maxBackfillPerPoll>4)throw new Error('PAPER_INVALID_BACKFILL_BOUND');
     recorder.store.db.exec(`CREATE TABLE IF NOT EXISTS paper_backfill (
@@ -88,7 +90,9 @@ export class PaperSessionWorker {
   }
   ingest(now:number) {
     const db=this.recorder.store.db;
-    const rows=db.prepare(`SELECT * FROM candles ORDER BY first_observed_at,source_epoch_ms`).all();
+    const rows=db.prepare(`SELECT * FROM candles WHERE session>=? OR last_observed_at>=? ORDER BY first_observed_at,source_epoch_ms`).all(this.recorder.date,this.historyIngestedThrough);
+    this.ledger.db.exec('BEGIN IMMEDIATE');
+    try {
     for(const row of rows){
       const start=Number(row.source_epoch_ms),observed=Number(row.first_observed_at);
       if(start+FIVE>now||observed>now)continue;
@@ -113,6 +117,9 @@ export class PaperSessionWorker {
       }
       for(const rev of revisions)admit(JSON.parse(String(rev.replacement_json)),Number(rev.observed_at));
     }
+    this.ledger.db.exec('COMMIT');
+    this.historyIngestedThrough=now;
+    } catch(error) {this.ledger.db.exec('ROLLBACK');throw error;}
   }
   async poll():Promise<CombinedReport> {
     const report=await this.recorder.poll(this.clock());
@@ -120,16 +127,18 @@ export class PaperSessionWorker {
     let backfill:BackfillReport;
     try {backfill=await this.backfill(this.clock());}
     catch {errors.push('paper_backfill_storage_error');backfill={status:'backfill_failed',calendarSource:this.ledger.config.calendar.source,previousSessions:[],requestsThisPoll:0,maxRequestsPerPoll:this.maxBackfillPerPoll,maxAttemptsPerSymbolSession:2,missing:[]};}
-    const now=this.clock();let ingested=true;
+    let now=this.clock();let ingested=true;
     try {this.ingest(now);}catch{ingested=false;errors.push('paper_ingestion_error');}
     // Manage every previously open position before evaluating current-session new-entry gates.
     for(const state of this.ledger.list().filter(s=>s.status==='open'||s.status==='pending-entry')) {
-      try{this.ledger.tickExisting(state.id,now);}catch{errors.push(`paper_risk_state_error/${state.symbol}/${state.session}`);}
+      try{this.ledger.tickExisting(state.id,this.clock());}catch{errors.push(`paper_risk_state_error/${state.symbol}/${state.session}`);}
     }
     for(const instrument of ingested?this.recorder.instruments:[]) {
-      try{this.ledger.tick(instrument.symbol,this.recorder.date,now);}catch{errors.push(`paper_evaluation_error/${instrument.symbol}`);}
+      try{this.ledger.tick(instrument.symbol,this.recorder.date,this.clock());}catch{errors.push(`paper_evaluation_error/${instrument.symbol}`);}
     }
-    const paper={...this.ledger.snapshot(this.recorder.date),observedAt:new Date(now).toISOString(),backfill,errors};
+    now=this.clock();
+    const snapshot=this.ledger.snapshot(this.recorder.date);
+    const paper={...snapshot,observedAt:new Date(now).toISOString(),backfill,errors,scanner:scanUniverse(this.recorder,this.ledger,report,now)};
     const combined={...report,paper};this.recorder.store.saveReport(combined);return combined;
   }
 }

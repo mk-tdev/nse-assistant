@@ -27,6 +27,6 @@ test('invalid paper configuration is visible without stopping recorder persisten
 test('deployment keeps one recorder service and mounts persistent storage while exposing reports only on loopback',()=>{
  const service=readFileSync('deploy/lightsail/nse-recorder.service','utf8'),reports=readFileSync('deploy/lightsail/nse-reports.service','utf8'),docker=readFileSync('deploy/lightsail/Dockerfile','utf8');
  assert.match(service,/flock -n/);assert.match(service,/paper\.env/);assert.match(service,/source=\/var\/lib\/nse-recorder,target=\/data/);
- assert.match(reports,/--publish 127\.0\.0\.1:8787:8787/);assert.match(reports,/target=\/data,readonly/);assert.match(docker,/COPY deploy\/lightsail\/calendar\*\.json/);
+ assert.match(reports,/--publish 127\.0\.0\.1:8787:8787/);assert.match(reports,/target=\/data,readonly/);assert.match(docker,/COPY deploy\/lightsail\/\*\.json/);
  assert.match(readFileSync('.dockerignore','utf8'),/!deploy\/lightsail\/calendar-paper-2026\.json/);
 });
