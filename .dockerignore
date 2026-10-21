@@ -1,0 +1,11 @@
+*
+!package.json
+!package-lock.json
+!tsconfig.json
+!tsconfig.build.json
+!src/
+!src/**
+!deploy/
+!deploy/lightsail/
+!deploy/lightsail/calendar-2026.json
+!deploy/lightsail/calendar-paper-2026.json

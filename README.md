@@ -1,6 +1,6 @@
 # Dhan read-only market-data MCP
 
-Isolated TypeScript project for NSE cash-equity paper analysis, starting **Wednesday 21 October 2026**. Default mode is entirely synthetic. It does not connect to Dhan, an account, a subscription, or the parent chat. There is no scheduled job or persistent paper ledger.
+Isolated TypeScript project for NSE cash-equity paper analysis, starting **Wednesday 21 October 2026**. Default mode is entirely synthetic. It does not connect to Dhan, an account, a subscription, or the parent chat. The separate recorder command now includes an automatic simulated paper loop with a persistent SQLite ledger; the existing Lightsail timer can schedule that combined process after review. Strict mode remains blocked by missing exact inputs.
 
 ## Run locally
 
@@ -32,6 +32,17 @@ A **review-only** host configuration example follows. This was not installed in 
 
 Creating this server does **not** make its tools available in another chat. Host registration, supported transports, permissions and tool discovery must be checked separately. No connector, OAuth grant or host configuration was changed.
 
+## Read-only session recorder (HDFCBANK and TCS)
+
+A separate foreground worker records completed five-minute candles to SQLite and writes per-symbol data-quality reports. It never places orders or claims exact strategy qualification. It also runs the strict-default paper worker; explicitly opted-in research can record hypothetical signals and positions. Run `npm run check` first, then:
+
+```sh
+npm run record -- --live --date 2026-10-21
+npm run record -- --report --date 2026-10-21
+```
+
+The command explicitly loads `.env.local`; select the intended session date and keep the computer awake. Defaults: 30-second polling, 10-second settlement allowance, and private gitignored storage under `.local/recorder/live/`. It stops after the session-close grace period. Mock demonstrations use separate storage. See [the recorder runbook](docs/session-recorder.md) for timing, error handling, restart behavior, synthetic HTTP tests and next-session checks. The existing MCP `npm start` entry point still does not load environment files automatically.
+
 ## Tool contract
 
 All four tools advertise `readOnlyHint: true`; none accepts credentials, an arbitrary URL, an endpoint path, or an HTTP method. Scope is deliberately restricted to NSE EQ-series cash equities. Resolve an instrument before using its ID.
@@ -57,7 +68,7 @@ Mock example: ID `999001`, symbol `MOCK_EQ`, date `2026-10-21`, fixed as-of `10:
 - Only bars ending at/before as-of are used. Missing range/session bars, absent volume, missing same-slot history, zero VWAP volume, duplicates/invalid prices, unverified calendar/timestamps, or missing latest completed bars block validity. History is fetched before evaluation and never filled forward. Historical replay is labeled and cannot be a current signal. Exact strategy `validSignal` and `currentSignal` remain false; approximate model evidence is kept separate and never becomes an exact entry instruction.
 - Freshness is conservative: if an expected completed five-minute slot is absent, data is stale. Source retrieval time alone is not proof of fresh prices. An unverified or missing quote timestamp produces `unknown` freshness, not `fresh`. Quotes older than 60 seconds are marked stale.
 
-This is a local paper simulator, not Dhan Sandbox or an execution engine. There are no order, portfolio, funds, positions, token renewal, authentication-changing, or account-modification tools or endpoints. Costs, slippage beyond the explicit gap/ambiguity assumptions, quantity sizing, corporate actions and fees are not modeled.
+This is a simulated research engine, not Dhan Sandbox or a broker execution engine. There are no order, portfolio, funds, positions, token renewal, authentication-changing, or account-modification tools or endpoints. The separate automatic paper worker has an explicit one-share default and optional configured fee/slippage estimates; net PnL is null when costs are unspecified. Corporate actions and actual execution costs remain unverified.
 
 ### Scheduled launch date
 
@@ -77,7 +88,7 @@ After the user approves secure setup, a local operator can arrange short-lived e
 | `DHAN_QUOTE_TIMEZONE_VERIFIED` | `true` only after verifying the quote's DD/MM/YYYY timestamp is IST |
 | `DHAN_CALENDAR_PATH` | Local JSON `{ "source": "verified exchange reference", "verified": true, "sessions": ["YYYY-MM-DD"] }` with every regular trading date covering the previous 20 sessions plus requested date |
 
-No operational calendar is configured. A non-installed test snapshot of scheduled September–October dates is in `fixtures/nse-scheduled-sessions-2026-09-to-10.json`. An absent calendar blocks analysis. Do not mark a weekday list as verified. Live access, timestamps, holiday completeness, instrument mapping, adjustment semantics, entitlement and actual data lag must be validated in that approved setup before relying on outputs.
+The MCP path still needs an operator calendar. The combined worker includes an explicitly unverified scheduled research calendar covering September–December; strict mode does not treat it as verified. A non-installed test snapshot of scheduled September–October dates is in `fixtures/nse-scheduled-sessions-2026-09-to-10.json`. An absent calendar blocks analysis. Do not mark a weekday list as verified. Live access, timestamps, holiday completeness, instrument mapping, adjustment semantics, entitlement and actual data lag must be validated in that approved setup before relying on outputs.
 
 ### Official Dhan integration facts
 
@@ -92,9 +103,13 @@ Checked against public official documentation during implementation (19 October 
 
 Only three upstream method/URL pairs are allowlisted in `src/dhan.ts`: the public CSV GET and the quote/intraday POSTs. All redirects are rejected; credential headers are never attached to the public CSV. No generic proxy exists. Exceptions exposed through MCP use fixed codes, and startup diagnostics omit exception details; the redactor also removes secret fields and known literal tokens. Debug request/body/header logging must remain disabled.
 
-## Secure remote transport option (documented, not enabled)
+## Lightsail recorder deployment
 
-Use MCP **Streamable HTTP** with the same `createServer` tool definitions behind a reviewed HTTPS endpoint and separate MCP authorization. No HTTP listener, tunnel, firewall rule, deployment or persistent service is included or started by this project.
+The [Singapore deployment runbook](deploy/lightsail/README.md) includes a Docker image, market-session scheduler, persistent host storage and a quality-report viewer accessed through SSH. Instance `nse-recorder` was deployed using AWS profile `default` following approval of the US$12/month plan. Local access instructions are in `.local/deploy/ACCESS.md`. The worker requires a current Dhan access token; token renewal is not automated.
+
+## Secure remote MCP transport option (documented, not enabled)
+
+Use MCP **Streamable HTTP** with the same `createServer` tool definitions behind a reviewed HTTPS endpoint and separate MCP authorization. No remote MCP listener or authentication has been implemented. The separate read-only report viewer in the Lightsail package uses SSH access.
 
 Before implementation/deployment, a separate user-approved security setup must choose a supported host/client and auth provider. Use the official SDK's `@modelcontextprotocol/node` adapter or Web-standard handler for the negotiated protocol version. Require TLS, validate Host and Origin with an explicit allowlist (invalid Origin → 403), and bind any local upstream listener to 127.0.0.1. Validate short-lived MCP access tokens, issuer, audience/resource and appropriate data-read scope on every call; use protected-resource metadata and the MCP authorization flow supported by the client. Deny unauthenticated requests. Keep broker credentials entirely server-side and separate from MCP tokens. Do not pass through a client's bearer token to Dhan. Restrict access to the user's private market data, enforce rate limits, disable public caching and redact authorization in proxy/application logs. Treat any sharing/redistribution rights as an unresolved operational check before sharing data.
 
@@ -113,3 +128,7 @@ npm run test:http
 ```
 
 The HTTP probe accepts only hard-coded synthetic credentials. Postman's verbose simulation log may include those fixture headers; never use that developer-only probe or logging mode with real credentials. The fixture mock was generated from the cited local contract and extended for the public CSV; unmodeled paths return 501. No owner workspace was searched because this task excludes use of existing credentials; no Postman login, push, deployment or history configuration was requested. No live Dhan success is inferred from passing fixture tests. See `docs/VALIDATION.md` for recorded results and remaining limitations.
+
+## Automatic paper operation
+
+See [paper configuration, backfill, restart/export and review steps](docs/paper-trading.md) and [implementation status](docs/PAPER_IMPLEMENTATION_STATUS.md). One shared collector manages persisted completed bars, bounded prior-20 history and risk for existing simulated positions. New-entry gates never imply an exact trade; missing closing data retains unknown outcomes. No Notion publisher or broker order routes exist.

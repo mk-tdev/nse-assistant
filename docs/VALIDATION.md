@@ -27,3 +27,22 @@ Only stdio is implemented. The README documents a secure future Streamable HTTP 
 The optional local Postman mock was generated from the project's narrow, officially researched OpenAPI subset and extended with synthetic CSV. An owner-workspace search was intentionally omitted to avoid using existing app credentials. Its verbose fixture logs may expose the fictional test headers, so do not repurpose it with real secrets. A nonblocking keychain lookup error appeared during local mock generation; generation completed, no sign-in or credential setup was performed, and the loopback simulation/probe subsequently succeeded.
 
 Focused follow-up findings, exact-qualification safeguards, official calendar evidence and updated tests are recorded in [SELF_REVIEW.md](SELF_REVIEW.md).
+
+## Cloud automatic-paper integration — 21 October 2026
+
+The user-verified recorder handoff (`93ec29b`, archive SHA256 `65e97008dfe35c21cf443eb9cc4449ed1d53e2551c109a82f8055c22541b7ab8`) is merged into the cloud paper branch. No AWS access, deployment, credential change, broker order or Notion publisher was performed.
+
+Actual validation on Node v24.19.0:
+
+- `npm run check`: **79/79 tests passed**, strict TypeScript checking and production build passed. This includes all **42 inherited tests**, 20 original paper tests, and 17 integration/regression/export/lock tests. Full combined run completed in approximately 67 seconds.
+- Full-session synthetic integration: shared recorder and prior-20 backfill, signal→pending→entry→15:15 exit, durable restart and repeat polls, exactly one fill per symbol. Missing final three slots: 72 retained candles and unknown exit/gross/net, including restart.
+- Legacy-store upgrade fixture: pre-paper 19/21 October rows with no `candle_batches`; bounded fresh historical baseline provenance restores next-session research readiness, original execution observations stay byte-for-byte unchanged, refreshed data cannot be used before receive time, and verification flags stay false.
+- New-entry gates/mode/calendar change while positions exist: price-based stop/target management continues using stored quantity/terms. Volume-only blocks do not disable exits. Completed-price delivery grace prevents premature unknown outcomes; missing forced exit remains unknown after grace. Recorder revisions during paper downtime do not improve original fills.
+- Durable failed-history retry bounds, calendar coverage/evidence checks, explicit research configuration, private report API, duplicate collector rejection/restart and read-only audit export passed.
+- `npm run test:http:local`: both inherited HTTP adapter and recorder probes passed using only loopback fixture HTTP and synthetic credentials. Recorder scenarios included incomplete/complete, repeats, 401/429/500, duplicate/invalid candles, revisions and missing tail; 21 recorder fixture requests. No vendor network requests were sent.
+- `git diff --check` and `bash -n deploy/lightsail/*.sh` passed.
+- Docker is **not installed** in this executor, so no image build or container startup was claimed. `systemd-analyze verify` was attempted and could not fully validate runtime dependencies: `docker.service` and `/usr/bin/docker` are absent. Validate image build and service launch on a Docker-capable review host before deployment. Docker source/context checks verify both calendars are included; host storage, single-service guards and loopback-only report publishing are tested.
+
+Earlier development runs exposed a delivery-grace expectation mismatch in two paper tests. The engine now explicitly waits the configured grace before declaring missing price paths unknown; regression tests cover both timely delivery within grace and missing forced-exit data after grace. The final combined check above passed.
+
+Remaining LIVE limitations: no live-market replay of this worker; exact confirmation-time VWAP is unavailable; candle-label semantics and actual-session calendar evidence remain unverified; prior-slot REST history may be missing/unavailable; closing-tail omissions and delivery/observation latency need live review. Configured net is an estimate, never verified actual charges. Strict remains default and blocked; research must be explicitly opted in. Token refresh and production review/deployment are outside this cloud task.

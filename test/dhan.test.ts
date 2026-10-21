@@ -53,3 +53,8 @@ test('redaction removes opaque bearer tokens including whitespace-delimited valu
  }
  assert.equal(Object.isFrozen(ENDPOINTS),true);for(const endpoint of Object.values(ENDPOINTS))assert.equal(Object.isFrozen(endpoint),true);
 });
+test('detailed master uses underlying trading symbol instead of the company-name column',async()=>{
+ const csv='EXCH_ID,SEGMENT,SECURITY_ID,INSTRUMENT,UNDERLYING_SYMBOL,SYMBOL_NAME,DISPLAY_NAME,SERIES\nNSE,E,1333,EQUITY,HDFCBANK,HDFC BANK LTD,HDFC Bank,EQ\nNSE,E,11536,EQUITY,TCS,TATA CONSULTANCY SERV LT,Tata Consultancy Services,EQ\n';
+ const p=new DhanProvider(config,async()=>new Response(csv));
+ assert.deepEqual((await p.instruments()).items.map(i=>i.symbol),['HDFCBANK','TCS']);
+});
