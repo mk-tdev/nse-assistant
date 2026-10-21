@@ -14,7 +14,10 @@ fi
 if [[ ! -e /etc/nse-assistant/paper.env ]]; then
   install -m 0600 deploy/lightsail/paper.env.example /etc/nse-assistant/paper.env
 fi
+if [[ ! -e /etc/nse-assistant/reviewer.env ]]; then
+  install -m 0600 deploy/lightsail/reviewer.env.example /etc/nse-assistant/reviewer.env
+fi
 docker build -f deploy/lightsail/Dockerfile -t nse-recorder:local .
-install -m 0644 deploy/lightsail/nse-recorder.service deploy/lightsail/nse-recorder.timer deploy/lightsail/nse-reports.service /etc/systemd/system/
+install -m 0644 deploy/lightsail/nse-recorder.service deploy/lightsail/nse-recorder.timer deploy/lightsail/nse-reports.service deploy/lightsail/nse-watchlists.service deploy/lightsail/nse-watchlists.timer /etc/systemd/system/
 systemctl daemon-reload
 printf '%s\n' 'Prepared. Populate /etc/nse-assistant/dhan.env securely, then enable the reviewed services. Nothing was scheduled by this installer.'

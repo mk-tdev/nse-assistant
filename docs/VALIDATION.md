@@ -46,3 +46,14 @@ Actual validation on Node v24.19.0:
 Earlier development runs exposed a delivery-grace expectation mismatch in two paper tests. The engine now explicitly waits the configured grace before declaring missing price paths unknown; regression tests cover both timely delivery within grace and missing forced-exit data after grace. The final combined check above passed.
 
 Remaining LIVE limitations: no live-market replay of this worker; exact confirmation-time VWAP is unavailable; candle-label semantics and actual-session calendar evidence remain unverified; prior-slot REST history may be missing/unavailable; closing-tail omissions and delivery/observation latency need live review. Configured net is an estimate, never verified actual charges. Strict remains default and blocked; research must be explicitly opted in. Token refresh and production review/deployment are outside this cloud task.
+
+
+## Research extensions — AWS validation, 21 October 2026
+
+The AWS development container passed typechecking, all 95 tests, production build and both loopback HTTP suites. Tests cover persistent bounded recovery, complete one-minute aggregation, reviewer action/evidence validation, nonblocking calls, restart deduplication and the 40-call session cap, watchlist snapshots, independent ledgers, variants, compact evidence reports and completed-candle fetch caching.
+
+An isolated network-disabled replay of the final 21 October REST snapshot reproduced all 50 baseline rows without changes to signal/entry/stop/target/exit/PnL/classification: six entries, four stopped out (known gross subtotal -58.22), two unknown outcomes, 44 no-signal. This is historical simulation, not observed live execution or a complete PnL total.
+
+Both public screener sources fetched successfully. Preparation accepted 12 unique mapped stocks from 22 candidate rows after liquidity proxies and complete prior-20 morning history checks. A modeled 22 October pre-session rehearsal evaluated the baseline 50 plus those 12 in isolated storage, with all baseline history complete, no cohort errors and zero entries; cold pass 43.508 seconds and warm pass 4.52 seconds. The prepared list may change during the next automatic refresh.
+
+One real OpenAI API smoke request authenticated and returned a schema-valid review using the pinned model. No production paper trades were created by these tests. Active-market latency, data completeness and paper behavior remain to be checked in the next session.

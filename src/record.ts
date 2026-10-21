@@ -9,6 +9,8 @@ import {at,FIVE,validDate} from './model.js';
 import {CandleStore,SessionRecorder,resolveWatchlist,safeRecorderError} from './recorder.js';
 import {recorderMock} from './recorder-mock.js';
 import {loadUniverse} from './universe.js';
+import {loadWatchlists} from './watchlists.js';
+import {ResearchCoordinator} from './research.js';
 
 const help=`Configurable universe recorder and simulated-only paper loop (no broker orders; strict gated default).
 Usage: npm run record -- --live --date YYYY-MM-DD [--once] [--interval 30] [--data-dir .local/recorder/live]
@@ -36,27 +38,36 @@ export async function main(args=process.argv.slice(2)){
   try{lock.exec('PRAGMA busy_timeout=0; CREATE TABLE IF NOT EXISTS singleton(id INTEGER PRIMARY KEY); BEGIN EXCLUSIVE;');}
   catch{lock.close();throw new Error('RECORDER_LOCKED_OR_UNWRITABLE');}
   await chmod(join(dir,'collector-lock.sqlite'),0o600);
-  let store:CandleStore|undefined,ledger:PaperLedger|undefined,stopping=false,wake:(()=>void)|undefined;
+  let store:CandleStore|undefined,ledger:PaperLedger|undefined,research:ResearchCoordinator|undefined,stopping=false,wake:(()=>void)|undefined;
   const stop=()=>{stopping=true;wake?.();};
   process.on('SIGINT',stop);process.on('SIGTERM',stop);
   try{
     const mode=options.has('--live')?'live':'mock';
     const provider=mode==='live'?new DhanProvider({clientId:process.env.DHAN_CLIENT_ID??'',token:process.env.DHAN_ACCESS_TOKEN??'',candleStartVerified:process.env.DHAN_CANDLE_START_VERIFIED==='true',quoteTimezoneVerified:false}):recorderMock(date);
     const universe=await loadUniverse(date);
-    const instruments=resolveWatchlist((await provider.instruments()).items,universe?.constituents.map(c=>c.symbol));
+    const master=(await provider.instruments()).items;
+    const baseline=resolveWatchlist(master,universe?.constituents.map(c=>c.symbol));
+    const watched=await loadWatchlists(date,master,process.env.PAPER_RESEARCH_ENABLED==='true'?process.env.RECORDER_WATCHLIST_PATH:undefined);
+    const instruments=[...new Map([...baseline,...watched.instruments].map(i=>[i.securityId,i])).values()];
     store=new CandleStore(dbPath);await chmod(dbPath,0o600);
-    const recorder=new SessionRecorder(store,provider,instruments,date,mode,10,universe??undefined);
+    const recorder=new SessionRecorder(store,provider,instruments,date,mode,10,universe??undefined,process.env.RECORDER_FETCH_COMPLETED_ONLY==='true');
+    const baselineRecorder=new SessionRecorder(store,provider,baseline,date,mode,10,universe??undefined);
     let worker:PaperSessionWorker|undefined,paperSetupError:string|undefined;
     try {
       const config=await loadPaperConfig();
-      if(config){ledger=new PaperLedger(join(dir,'paper.sqlite'),config);await chmod(join(dir,'paper.sqlite'),0o600);worker=new PaperSessionWorker(recorder,ledger,mode==='mock'?()=>at(date,'10:00')+10000:Date.now);}
-    }catch{paperSetupError='PAPER_CONFIGURATION_OR_STORAGE_FAILED';}
+      if(config){ledger=new PaperLedger(join(dir,'paper.sqlite'),config);await chmod(join(dir,'paper.sqlite'),0o600);worker=new PaperSessionWorker(baselineRecorder,ledger,mode==='mock'?()=>at(date,'10:00')+10000:Date.now);
+        if(process.env.PAPER_RESEARCH_ENABLED==='true')research=new ResearchCoordinator(store,provider,instruments,watched.instruments,date,mode,config,dir,watched.snapshot,watched.error,mode==='mock'?()=>at(date,'10:00')+10000:Date.now);}
+    }catch{if(!worker)paperSetupError='PAPER_CONFIGURATION_OR_STORAGE_FAILED';else paperSetupError='RESEARCH_CONFIGURATION_OR_STORAGE_FAILED';}
     while(!stopping){
       const cycleStarted=Date.now();
       const now=mode==='mock'?at(date,'10:00')+10000:Date.now();
       // A paper fault cannot stop the recorder; all setup errors remain visible and no new fills are made.
-      const report=worker?await worker.poll():await recorder.poll(now);
-      if(paperSetupError)Object.assign(report,{paper:{simulatedOnly:true,exactQualification:false,status:'blocked',errors:[paperSetupError],states:[],observedAt:new Date(now).toISOString()}});
+      const raw=await recorder.poll(now);
+      Object.assign(raw,{collection:{baselineSymbols:baseline.map(i=>i.symbol),screenerSymbols:watched.instruments.map(i=>i.symbol),watchlistHash:watched.snapshot?.snapshotHash??null,watchlistError:watched.error}});
+      const report=worker?await worker.poll(raw,true):raw;
+      if(research&&'paper' in report){try{Object.assign(report.paper as object,{research:await research.poll(report)});}catch{Object.assign(report.paper as object,{research:{errors:['research_poll_failed'],simulatedOnly:true}});}}
+      if(paperSetupError&&!worker)Object.assign(report,{paper:{simulatedOnly:true,exactQualification:false,status:'blocked',errors:[paperSetupError],states:[],observedAt:new Date(now).toISOString()}});
+      if(paperSetupError&&worker&&'paper' in report)Object.assign(report.paper as object,{research:{errors:[paperSetupError],simulatedOnly:true}});
       const target=join(dir,`${date}.json`),temp=target+'.tmp';
       await writeFile(temp,JSON.stringify(report,null,2)+'\n',{mode:0o600});await rename(temp,target);
       if('paper' in report){const paperTarget=join(dir,`${date}.paper.json`);await writeFile(paperTarget+'.tmp',JSON.stringify(report.paper,null,2)+'\n',{mode:0o600});await rename(paperTarget+'.tmp',paperTarget);}
@@ -64,8 +75,8 @@ export async function main(args=process.argv.slice(2)){
       console.log(JSON.stringify({observedAt:report.observedAt,sessionDate:date,mode,phase:report.phase,instruments:report.instruments.map(i=>({symbol:i.symbol,status:i.status,stored:i.storedCandles,expected:i.expectedCandles,missing:i.missingSlots.length,missingVolume:i.missingVolumeSlots.length,revised:i.revisedCandles,error:i.error})),report:target}));
       const unhealthy=report.instruments.some(i=>i.status==='fetch_error'||i.status==='missing_data');
       if(options.has('--once')||mode==='mock'||(!worker&&report.instruments.some(i=>i.error==='DHAN_HTTP_401'||i.error==='DHAN_HTTP_403'))||now>=at(date,'15:30')+FIVE){process.exitCode=unhealthy?2:0;break;}
-      await new Promise<void>(resolve=>{const timer=setTimeout(()=>{wake=undefined;resolve();},Math.max(0,interval*1000-(Date.now()-cycleStarted)));wake=()=>{clearTimeout(timer);wake=undefined;resolve();};if(stopping)wake();});
+      await new Promise<void>(resolve=>{const timer=setTimeout(()=>{wake=undefined;resolve();},Math.max(0,Math.min(interval*1000-(Date.now()-cycleStarted),(Math.floor((Date.now()-10000)/FIVE)+1)*FIVE+10000-Date.now())));wake=()=>{clearTimeout(timer);wake=undefined;resolve();};if(stopping)wake();});
     }
-  }finally{ledger?.close();store?.close();lock.close();process.off('SIGINT',stop);process.off('SIGTERM',stop);}
+  }finally{await research?.close();ledger?.close();store?.close();lock.close();process.off('SIGINT',stop);process.off('SIGTERM',stop);}
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href)main().catch(error=>{console.error(safeRecorderError(error));process.exitCode=1;});

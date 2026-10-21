@@ -13,6 +13,7 @@ export type PaperCalendar = {
   independentlyVerified: boolean;
 };
 export type PaperConfig = {
+  variant?: 'range-hold'|'range-failure-exit'|'agent-recovery';
   mode: PaperMode;
   quantity: number;
   feesPerSide: number | null;
@@ -36,6 +37,7 @@ export type PaperState = {
   reasons: string[]; signal: number | null; entryAt: number | null; entry: number | null;
   stop: number | null; target: number | null; exitAt: number | null; exit: number | null;
   exitReason: string | null; grossPnl: number | null; netPnl: number | null;
+  invalidatedAt?:number;
   terms?: { feesPerSide:number|null; slippageBps:number|null };
   quantity: number; updatedAt: number; cursor: number; unknownOutcome: boolean;
 };
@@ -122,7 +124,14 @@ export class PaperLedger {
     try {const result=this.advance(s.symbol,s.session,now,id);this.db.exec('COMMIT');return result;}
     catch(e){this.db.exec('ROLLBACK');throw e;}
   }
-  snapshot(session:string) {
+  protectiveExit(id:string,evidence:{price:number;sourceTime:number;observedAt:number;reason:string},now:number){
+    if(this.config.variant!=='agent-recovery'||!Number.isFinite(evidence.price)||evidence.price<=0||evidence.sourceTime>evidence.observedAt||evidence.observedAt>now||now-evidence.sourceTime>this.config.maxObservationDelayMs)throw Error('PAPER_INVALID_PROTECTIVE_EVIDENCE');
+    const s=this.list().find(s=>s.id===id);if(!s||s.status!=='open')return false;
+    this.db.exec('BEGIN IMMEDIATE');try{s.status='closed';s.exit=evidence.price;s.exitAt=evidence.sourceTime;s.exitReason='agent_protective_observed_price_unknown_path';s.unknownOutcome=true;s.grossPnl=null;s.netPnl=null;s.updatedAt=now;s.reasons=['gap_path_unresolved',evidence.reason];
+    this.event(s,'agent-protective-exit',now,evidence.sourceTime,'agent_protective_exit',{evidence,execution:'protective paper mark at observed completed close; not executable fill; historical stop path unresolved'});
+    this.db.prepare('UPDATE paper_states SET body=? WHERE id=?').run(JSON.stringify(s),id);this.db.exec('COMMIT');return true;}catch(e){this.db.exec('ROLLBACK');throw e;}
+  }
+  snapshot(session:string,compact=false) {
     const states=this.list().filter(s=>s.session===session);
     return {simulatedOnly:true,exactQualification:false,mode:this.config.mode,observedAt:null as string|null,
       assumptions:{calendar:this.config.calendar,timestampSemanticsVerified:this.config.timestampSemanticsVerified,
@@ -132,17 +141,18 @@ export class PaperLedger {
         feesPerSide:this.config.feesPerSide,slippageBps:this.config.slippageBps,maxObservationDelayMs:this.config.maxObservationDelayMs},
       baselineProvenance:this.db.prepare('SELECT evaluation_session,symbol,COUNT(*) AS observations,MAX(observed_at) AS last_observed_at FROM paper_baselines WHERE evaluation_session=? GROUP BY evaluation_session,symbol').all(session),
       baselinePolicy:'Fresh historical REST observations are separate from original execution observations; never exact verification',
-      states,events:states.flatMap(s=>this.events(s.id)).slice(-2000),
+      states,events:states.flatMap(s=>this.events(s.id)).sort((a,b)=>Number(a.id)-Number(b.id)).slice(compact?-200:-2000).map(e=>{if(!compact)return e;const body=JSON.parse(String(e.body));const {baselineObservations,calendar,previous20,...rest}=body;return {...e,body:JSON.stringify({...rest,...(baselineObservations?{baselineObservationCount:baselineObservations.length}:{}),fullEvidence:'SQLite audit export'})};}),
       revisions:[...new Set(states.map(s=>s.symbol))].flatMap(symbol=>this.revisions(symbol).map(r=>({symbol,...r}))),
-      eventsLimit:2000,fullAuditExport:'node dist/paper-export.js /data/paper.sqlite'};
+      eventsLimit:compact?200:2000,fullAuditExport:'node dist/paper-export.js /data/paper.sqlite'};
   }
   private advance(symbol: string, session: string, now: number, existingId?:string): PaperState {
     if (!validDate(session) || !Number.isFinite(now) || (!existingId && day(now)!==session)) throw new Error('TICK_REQUIRES_CURRENT_SESSION');
-    const id=existingId??`${symbol}/${session}/${strategy}/${this.config.mode}`;
+    const strategyName=this.config.variant?`${strategy}/${this.config.variant}`:strategy;
+    const id=existingId??`${symbol}/${session}/${strategyName}/${this.config.mode}`;
     const saved=this.db.prepare('SELECT config_hash,body FROM paper_states WHERE id=?').get(id) as {config_hash:string;body:string}|undefined;
     const changed=Boolean(saved && saved.config_hash!==this.configHash);
     const s: PaperState=saved?JSON.parse(saved.body):{
-      id,symbol,session,strategy,mode:this.config.mode,status:'blocked',reasons:[],signal:null,
+      id,symbol,session,strategy:strategyName,mode:this.config.mode,status:'blocked',reasons:[],signal:null,
       entryAt:null,entry:null,stop:null,target:null,exitAt:null,exit:null,exitReason:null,
       grossPnl:null,netPnl:null,terms:{feesPerSide:this.config.feesPerSide,slippageBps:this.config.slippageBps},quantity:this.config.quantity,updatedAt:now,cursor:at(session,'09:30')-FIVE,unknownOutcome:false,
     };
@@ -219,6 +229,7 @@ export class PaperLedger {
         else if(t>at(session,'15:15')) {s.unknownOutcome=true;reason='missing_forced_exit';}
         else if(c.open<=s.stop!){exit=c.open;reason='gap_stop';exitAt=t;}
         else if(c.open>=s.target!){exit=s.target;reason='gap_target_capped';exitAt=t;}
+        else if(cfg.variant==='range-failure-exit'&&s.invalidatedAt!==undefined&&t>=s.invalidatedAt){exit=c.open;reason='range_failure_next_open';exitAt=t;}
         else if(c.low<=s.stop!){exit=s.stop;reason=c.high>=s.target!?'stop_first_ambiguous':'stop';}
         else if(c.high>=s.target!){exit=s.target;reason='target';}
         if(reason){
@@ -232,6 +243,7 @@ export class PaperLedger {
           this.event(s,`exit/${t}`,now,t,'closed',{...s,observation:o,execution:'completed-bar hypothetical; not executable live price'});
           s.cursor=t;break;
         }
+        if(cfg.variant==='range-failure-exit'&&c.close<high)s.invalidatedAt=t+FIVE;
       } else if(s.status==='pending-entry') {
         if(t!==s.signal!+FIVE || o.observedAt-(t+FIVE)>cfg.maxObservationDelayMs || now-(t+FIVE)>cfg.maxObservationDelayMs){
           s.status='closed';s.exitReason='entry_observation_too_late';s.reasons=['entry_observation_too_late'];
@@ -256,7 +268,8 @@ export class PaperLedger {
         const vw=vwap(prefix);
         if(vw===null)return block(['undefined_approximate_vwap']);
         s.status='no-signal';s.reasons=[];
-        const qualifies=c.close>high&&c.close>vw&&rv.ratio!>=1.5;
+        let qualifies=c.close>high&&c.close>vw&&rv.ratio!>=1.5;
+        if(cfg.variant==='range-hold'){const prev=byStart.get(t-FIVE)?.candle;const prevVwap=vwap(prefix.filter(c=>c.start<t));const prevRv=prev?relativeVolume(prev,history.map(o=>o.candle),previous):null;qualifies=Boolean(prev&&prev.start>=at(session,'09:30')&&prevVwap!==null&&prev.close>high&&prev.close>prevVwap&&prevRv?.ratio!==null&&(prevRv?.ratio??0)>=1.5&&c.close>high&&c.close>vw);}
         this.event(s,`decision/${t}`,now,t+FIVE,qualifies?'research_signal':'no_signal',{
           observation:o,high,low,vwap:vw,vwapMethod:'HLC3 bar approximation',relativeVolume:rv,
           previous20:previous,calendar:cal,exactQualification:false,configHash:this.configHash,

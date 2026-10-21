@@ -8,18 +8,19 @@ export interface Provider {
   instruments(): Promise<{items:Instrument[];fetchedAt:number}>;
   quote(id:string): Promise<Record<string,unknown>>;
   candles(id:string,from:string,to:string): Promise<Batch>;
+  minuteCandles?(id:string,from:string,to:string): Promise<Batch>;
 }
 export function redact(value: unknown, secrets: string[] = []): string {
   let s = typeof value==='string'?value:(JSON.stringify(value)??String(value));
   for(const secret of secrets.filter(Boolean)) s=s.split(secret).join('[REDACTED]');
   return s.replace(/((?:access[-_]?token|authorization|client[-_]?id|app[-_]?secret|api[-_]?key)["']?\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\r\n,}]+)/gi,'$1"[REDACTED]"').replace(/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g,'[REDACTED]');
 }
-export function parseCandles(raw: unknown, fetchedAt:number, source:string, verified:boolean): Batch {
+export function parseCandles(raw: unknown, fetchedAt:number, source:string, verified:boolean,intervalMs=300_000): Batch {
   const obj=z.object({timestamp:z.array(z.number().int().nonnegative()),open:z.array(z.number()),high:z.array(z.number()),low:z.array(z.number()),close:z.array(z.number()),volume:z.array(z.number().nonnegative().nullable()).optional()}).parse(raw);
   const n=obj.timestamp.length;
   if ([obj.open,obj.high,obj.low,obj.close,...(obj.volume?[obj.volume]:[])].some(a=>a.length!==n)) throw new Error('DHAN_INVALID_PARALLEL_ARRAY_LENGTHS');
   const candles: Candle[]=obj.timestamp.map((t,i)=>({start:t*1000,open:obj.open[i]!,high:obj.high[i]!,low:obj.low[i]!,close:obj.close[i]!,volume:obj.volume?.[i]??null}));
-  if(candles.some((c,i)=>!validCandle(c) || i>0 && c.start<=candles[i-1]!.start)) throw new Error('DHAN_INVALID_CANDLE_ORDER_OR_OHLC');
+  if(candles.some((c,i)=>!validCandle({...c,start:Math.floor(c.start/300_000)*300_000}) || c.start%intervalMs!==0 || i>0 && c.start<=candles[i-1]!.start)) throw new Error('DHAN_INVALID_CANDLE_ORDER_OR_OHLC');
   return { candles,fetchedAt,source,candleStartVerified:verified,missing:obj.volume?.every(v=>v!==null)?[]:['historical_volume_missing'] };
 }
 class Gate {
@@ -76,13 +77,15 @@ export class DhanProvider implements Provider {
       return {securityId:id,lastPrice:q.last_price,brokerSessionVwap:q.average_price&&q.average_price>0?q.average_price:null,volume:q.volume??null,source:this.source,timeZone:TZ,sourceTimeZone:this.config.quoteTimezoneVerified?TZ:'unverified',fetchedAt:new Date(fetchedAt).toISOString(),sourceTimestamp:tradeTime===null?null:new Date(tradeTime).toISOString(),rawSourceTimestamp:q.last_trade_time??null,freshness:age===null?'unknown':age>60_000?'stale':'fresh',ageMs:age,missingData:[...(tradeTime===null?['verified_quote_timestamp']:[]),...(q.volume===undefined?['volume']:[]),...(!q.average_price||q.average_price<=0?['broker_session_vwap']:[])]};
     });
   }
-  async candles(id:string,from:string,to:string){
+  async candles(id:string,from:string,to:string){return this.history(id,from,to,'5');}
+  async minuteCandles(id:string,from:string,to:string){return this.history(id,from,to,'1');}
+  private async history(id:string,from:string,to:string,interval:'1'|'5'){
     if(!Number.isFinite(Date.parse(from))||!Number.isFinite(Date.parse(to))||Date.parse(to)<=Date.parse(from)||Date.parse(to)-Date.parse(from)>90*86400000)throw new Error('INVALID_HISTORY_RANGE_MAX_90_DAYS');
     await this.resolve(id);
     const local=(s:string)=>new Date(Date.parse(s)+330*60000).toISOString().slice(0,19).replace('T',' ');
     return historyGate.run(async()=>{
-      const raw=await (await this.request('candles',{securityId:id,exchangeSegment:'NSE_EQ',instrument:'EQUITY',interval:'5',oi:false,fromDate:local(from),toDate:local(to)})).json();
-      const batch=parseCandles(raw,Date.now(),this.source,this.config.candleStartVerified);
+      const raw=await (await this.request('candles',{securityId:id,exchangeSegment:'NSE_EQ',instrument:'EQUITY',interval,oi:false,fromDate:local(from),toDate:local(to)})).json();
+      const batch=parseCandles(raw,Date.now(),this.source,this.config.candleStartVerified,Number(interval)*60_000);
       batch.candles=batch.candles.filter(c=>c.start>=Date.parse(from)&&c.start<Date.parse(to));
       return batch;
     });

@@ -1,6 +1,6 @@
 # Reviewed Docker/systemd deployment
 
-This is a source runbook, not a record of production infrastructure or approval to deploy. The cloud implementation task did not access a production host, change credentials, enable services or submit broker orders. Keep concrete host/account/access/billing details in the operator's private records.
+This is the source deployment runbook. The authorized deployment runs on AWS Lightsail; keep concrete host/account/access/billing details in the operator's private records. The application submits no broker orders.
 
 ## One scheduled collector
 
@@ -17,7 +17,7 @@ npm run test:http:local
 docker build -f deploy/lightsail/Dockerfile -t nse-recorder:local .
 ```
 
-Review the service source, persistent storage mount, calendar evidence and configuration before deployment. Docker is unavailable in the cloud coding executor; build and launch the image on a Docker-capable review host. No successful image/systemd launch of this integration is claimed by the cloud tests.
+Review the service source, persistent storage mount, calendar evidence and configuration before deployment. Build and validate on the AWS Docker host. Source tests, isolated replays and pre-session rehearsals do not establish active-market data delivery.
 
 The optional source package script uses an explicit allowlist excluding secrets, recorded data and Git history. The installer is intended for the operator-reviewed host checkout. It prepares Docker and unit files but does not enable timers. It preserves existing credential files and creates missing configuration templates.
 
@@ -46,3 +46,9 @@ The [paper runbook](../../docs/paper-trading.md) describes strict/research opt-i
 ## Nifty 50 universe
 
 Production uses `RECORDER_UNIVERSE=nifty50` in `/etc/nse-assistant/paper.env`. Keep `RECORDER_UNIVERSE_PATH=/app/deploy/lightsail/nifty50-2026-10-21.json` or select a reviewed replacement snapshot. The file bundles 50 official NSE constituents, validates unique Dhan mappings, and fails closed when missing, malformed or expired. The October snapshot expires after 31 October; refresh membership before November. The scanner runs the same paper strategy on every constituent and exposes all rows in `/api/paper` under `scanner`. Preload the 20 prior-session morning baselines before market, retaining provenance. No separate collector, public listener or broker-order endpoint is added. See [scanner details](../../docs/nifty50-paper.md).
+
+## Optional research comparisons
+
+See [research cohorts](../../docs/research-cohorts.md). Enable research explicitly in `paper.env`, configure the frozen dated watchlist path, and keep the OpenAI key in the separate root-only `reviewer.env`. The recorder service reads that file; the report service receives neither provider key. Install and enable `nse-watchlists.timer` to refresh sources and baseline history at 08:50 IST before the existing 09:05 recorder launch. Watchlist preparation uses the same host/container lock and exits visibly if preparation fails. Missing or invalid watchlists do not replace the original 50-stock baseline.
+
+Persistent comparison ledgers are `paper-screener-orb.sqlite`, `paper-range-hold.sqlite`, `paper-range-failure-exit.sqlite`, `paper-agent-recovery.sqlite` and `research.sqlite`; include them in consistent backups. Comparison ledgers are independent, not one combined portfolio.

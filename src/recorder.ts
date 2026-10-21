@@ -18,7 +18,7 @@ export function safeRecorderError(error:unknown):string {
   return /^(DHAN_[A-Z_0-9]+|LIVE_CREDENTIALS_NOT_CONFIGURED|UNKNOWN_NSE_EQUITY_SECURITY_ID|RECORDER_[A-Z_]+)$/.test(message)?message:'RECORDER_FETCH_OR_SCHEMA_ERROR';
 }
 export function resolveWatchlist(items:Instrument[],symbols:readonly string[]=WATCHLIST):Instrument[]{
-  if(!symbols.length||symbols.length>50||new Set(symbols).size!==symbols.length)throw new Error('RECORDER_INVALID_WATCHLIST');
+  if(!symbols.length||symbols.length>80||new Set(symbols).size!==symbols.length)throw new Error('RECORDER_INVALID_WATCHLIST');
   const result=symbols.map(symbol=>{
     const matches=items.filter(i=>i.exchangeSegment==='NSE_EQ'&&i.instrument==='EQUITY'&&i.symbol.replace(/-EQ$/,'')===symbol);
     const ids=[...new Set(matches.map(i=>i.securityId))];
@@ -86,7 +86,7 @@ export class CandleStore {
   }
 }
 export class SessionRecorder {
-  constructor(readonly store:CandleStore,readonly provider:Provider,readonly instruments:Instrument[],readonly date:string,readonly mode:'live'|'mock',readonly settleSeconds=10,readonly universe?:Universe){
+  constructor(readonly store:CandleStore,readonly provider:Provider,readonly instruments:Instrument[],readonly date:string,readonly mode:'live'|'mock',readonly settleSeconds=10,readonly universe?:Universe,readonly completedOnly=false){
     if(!validDate(date)||!Number.isFinite(settleSeconds)||settleSeconds<0||settleSeconds>60)throw new Error('RECORDER_INVALID_CONFIGURATION');
     store.bind(mode,provider.source);
   }
@@ -96,7 +96,9 @@ export class SessionRecorder {
     const report:SessionReport={sessionDate:this.date,observedAt:iso(now),mode:this.mode,source:this.provider.source,timeZone:'Asia/Kolkata',calendarVerified:false,strategyEnabled:false,phase:now<open?'before_open':now<close?'session':'after_close',...(this.universe?{universe:this.universe}:{}),instruments:[]};
     for(const instrument of this.instruments){
       let batch:Batch|null=null,error:string|null=null,added=0,revised=0,excluded=0,accepted:Candle[]|null=null;
-      if(expectedEnd>open){
+      const prior=this.store.candles(this.date,instrument.securityId);
+      const cached=this.completedOnly&&(this.store.lastSuccess(this.date,instrument.securityId)??0)>=expectedEnd&&Array.from({length:(expectedEnd-open)/FIVE},(_,i)=>open+i*FIVE).every(t=>prior.some(c=>c.start===t&&c.volume!==null));
+      if(expectedEnd>open&&!cached){
         try{
           // Pad before the lower boundary; retain only the intended session locally.
           batch=await this.provider.candles(instrument.securityId,iso(open-1000),iso(Math.min(now,close)));

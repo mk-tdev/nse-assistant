@@ -8,7 +8,7 @@ StartLimitIntervalSec=0
 [Service]
 Type=simple
 WorkingDirectory=/opt/nse-assistant
-ExecStart=/usr/bin/flock -n /run/lock/nse-recorder-cloud.lock /usr/bin/docker run --rm --init --name nse-recorder --read-only --cap-drop=ALL --security-opt=no-new-privileges --tmpfs /run/recorder:rw,noexec,nosuid,uid=1000,gid=1000,mode=0700 --env-file /etc/nse-assistant/dhan.env --env RECORDER_DATA_DIR=/data --env-file /etc/nse-assistant/paper.env --mount type=bind,source=/var/lib/nse-recorder,target=/data nse-recorder:local
+ExecStart=/usr/bin/flock -n /run/lock/nse-recorder-cloud.lock /usr/bin/docker run --rm --init --name nse-recorder --read-only --cap-drop=ALL --security-opt=no-new-privileges --tmpfs /run/recorder:rw,noexec,nosuid,uid=1000,gid=1000,mode=0700 --env-file /etc/nse-assistant/dhan.env --env RECORDER_DATA_DIR=/data --env-file /etc/nse-assistant/paper.env --env-file /etc/nse-assistant/reviewer.env --mount type=bind,source=/var/lib/nse-recorder,target=/data nse-recorder:local
 ExecStop=-/usr/bin/docker stop --time 30 nse-recorder
 Restart=on-failure
 RestartSec=60

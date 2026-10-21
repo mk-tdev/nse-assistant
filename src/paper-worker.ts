@@ -90,7 +90,8 @@ export class PaperSessionWorker {
   }
   ingest(now:number) {
     const db=this.recorder.store.db;
-    const rows=db.prepare(`SELECT * FROM candles WHERE session>=? OR last_observed_at>=? ORDER BY first_observed_at,source_epoch_ms`).all(this.recorder.date,this.historyIngestedThrough);
+    const ids=this.recorder.instruments.map(i=>i.securityId);
+    const rows=ids.length?db.prepare(`SELECT * FROM candles WHERE (session>=? OR last_observed_at>=?) AND security_id IN (${ids.map(()=>'?').join(',')}) ORDER BY first_observed_at,source_epoch_ms`).all(this.recorder.date,this.historyIngestedThrough,...ids):[];
     this.ledger.db.exec('BEGIN IMMEDIATE');
     try {
     for(const row of rows){
@@ -121,8 +122,8 @@ export class PaperSessionWorker {
     this.historyIngestedThrough=now;
     } catch(error) {this.ledger.db.exec('ROLLBACK');throw error;}
   }
-  async poll():Promise<CombinedReport> {
-    const report=await this.recorder.poll(this.clock());
+  async poll(input?:SessionReport,compact=false):Promise<CombinedReport> {
+    const report=input??await this.recorder.poll(this.clock());
     const errors:string[]=[];
     let backfill:BackfillReport;
     try {backfill=await this.backfill(this.clock());}
@@ -137,8 +138,8 @@ export class PaperSessionWorker {
       try{this.ledger.tick(instrument.symbol,this.recorder.date,this.clock());}catch{errors.push(`paper_evaluation_error/${instrument.symbol}`);}
     }
     now=this.clock();
-    const snapshot=this.ledger.snapshot(this.recorder.date);
+    const snapshot=this.ledger.snapshot(this.recorder.date,compact);
     const paper={...snapshot,observedAt:new Date(now).toISOString(),backfill,errors,scanner:scanUniverse(this.recorder,this.ledger,report,now)};
-    const combined={...report,paper};this.recorder.store.saveReport(combined);return combined;
+    const combined={...report,paper};if(!compact)this.recorder.store.saveReport(combined);return combined;
   }
 }

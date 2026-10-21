@@ -1,0 +1,8 @@
+[Unit]
+Description=Prepare research watchlists before the NSE session
+[Timer]
+OnCalendar=Mon..Fri *-*-* 08:50:00 Asia/Kolkata
+Persistent=false
+Unit=nse-watchlists.service
+[Install]
+WantedBy=timers.target

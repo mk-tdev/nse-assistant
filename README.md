@@ -2,6 +2,10 @@
 
 Isolated TypeScript project for NSE cash-equity paper analysis, starting **Wednesday 21 October 2026**. Default mode is entirely synthetic. It does not connect to Dhan, an account, a subscription, or the parent chat. The separate recorder command now includes an automatic simulated paper loop with a persistent SQLite ledger; the existing Lightsail timer can schedule that combined process after review. Strict mode remains blocked by missing exact inputs.
 
+## AWS research comparisons
+
+The optional [research cohorts](docs/research-cohorts.md) retain the Nifty 50 baseline and add frozen Chartink/Screener watchlists, second-close hold and range-failure exit variants, and a separate recovery ledger with bounded OpenAI reviews. All outcomes are simulated; recovered late prices never authorize retroactive fills. See the runbook for persistent storage, private reports, limits and morning preparation.
+
 ## Run locally
 
 Requires Node.js 24+ and npm. Clone this repository, then install and verify:
@@ -78,7 +82,7 @@ The [official NSE capital-market circular NSE/CMTR/71775](https://nsearchives.ns
 
 ## Live setup is a separate approved step
 
-**No credential installation, subscription purchase, remote authentication or persistent access has been performed.** `.env.example` contains placeholders only and is not automatically loaded. Actual `.env*`, secrets, logs, local configuration, build output and dependencies are gitignored. Do not paste tokens into chats, tool arguments, source, tests or host configuration committed to Git.
+The checked-in examples contain placeholders only and are not automatically loaded by the MCP entry point. The separately approved AWS recorder uses protected server-side environment files; operator deployment details stay outside Git. Actual `.env*`, secrets, logs, local configuration, build output and dependencies are gitignored. Do not paste tokens into chats, tool arguments, source, tests or host configuration committed to Git.
 
 After the user approves secure setup, a local operator can arrange short-lived environment injection from a protected secret store, then set:
 

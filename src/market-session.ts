@@ -17,7 +17,7 @@ export async function runMarketSession(){
  const decision=marketSessionDecision(JSON.parse(await readFile(calendarPath,'utf8')),Date.now());
  console.log(JSON.stringify({event:'market_session_decision',...decision,calendarSource:'published schedule; subsequent notices require operator updates'}));
  if(!decision.run){if(decision.reason==='calendar_out_of_coverage')process.exitCode=1;return;}
- const child=spawn(process.execPath,[new URL('./record.js',import.meta.url).pathname,'--live','--date',decision.date,'--data-dir',process.env.RECORDER_DATA_DIR??'/data','--lock-dir',process.env.RECORDER_LOCK_DIR??'/run/recorder'],{stdio:'inherit',env:process.env});
+ const child=spawn(process.execPath,[new URL('./record.js',import.meta.url).pathname,'--live','--date',decision.date,'--interval',process.env.RECORDER_POLL_INTERVAL_SECONDS??'30','--data-dir',process.env.RECORDER_DATA_DIR??'/data','--lock-dir',process.env.RECORDER_LOCK_DIR??'/run/recorder'],{stdio:'inherit',env:process.env});
  const forward=(signal:NodeJS.Signals)=>()=>child.kill(signal);
  const interrupt=forward('SIGINT'),terminate=forward('SIGTERM');process.on('SIGINT',interrupt);process.on('SIGTERM',terminate);
  await new Promise<void>((resolve,reject)=>{child.once('error',reject);child.once('exit',(code,signal)=>{process.exitCode=signal?1:code??1;resolve();});});
