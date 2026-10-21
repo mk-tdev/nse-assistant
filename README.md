@@ -8,6 +8,8 @@ The optional [research cohorts](docs/research-cohorts.md) retain the Nifty 50 ba
 
 AWS paper cohorts use a planned 15:10 IST opening-price exit, confirmed when that candle completes at 15:15. Recording continues through the close; absent prices still leave unknown outcomes. See the research runbook for the legacy default and timing assumptions.
 
+AWS review calls use GPT-5.6 Luna with low reasoning effort and a persistent USD1/day reviewer allowance; see the research runbook for request limits and budget scope.
+
 ## Run locally
 
 Requires Node.js 24+ and npm. Clone this repository, then install and verify:

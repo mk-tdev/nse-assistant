@@ -56,3 +56,7 @@ Persistent comparison ledgers are `paper-screener-orb.sqlite`, `paper-range-hold
 ## Early planned paper exit
 
 Set `PAPER_EXIT_TIME_IST=15:10` in protected `paper.env` to apply the earlier planned exit to the baseline and every research cohort. The price is the 15:10 candle open, confirmed after that candle completes at 15:15 IST. Recording continues until 15:35; missing data remains visible. Omission retains legacy 15:15 behavior. Change this configuration before the session, not to rewrite an existing ledger.
+
+## Reasoning budget
+
+Set the protected reviewer environment to `OPENAI_REVIEW_MODEL=gpt-5.6-luna`, `OPENAI_REVIEW_REASONING_EFFORT=low`, `OPENAI_REVIEW_DAILY_BUDGET_USD=1` and `OPENAI_REVIEW_BUDGET_PATH=/data/reviewer-budget.sqlite`. Preserve the existing key. Back up and retain the budget database through restarts and rollbacks; do not delete it to retry requests. The app reserves 2.5 US cents per bounded request and stops LLM calls when the actual IST day's allowance is exhausted. Recording, deterministic recovery and paper rules continue.
