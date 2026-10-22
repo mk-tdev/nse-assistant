@@ -11,3 +11,7 @@
 !deploy/lightsail/calendar-paper-2026.json
 
 !deploy/lightsail/nifty50-2026-10-21.json
+!ui/
+!ui/**
+!scripts/
+!scripts/**

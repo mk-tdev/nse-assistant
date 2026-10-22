@@ -8,7 +8,7 @@
     "node": ">=24"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "node scripts/build-dashboard.mjs && tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test test/*.test.ts",
     "start": "node dist/stdio.js",
@@ -17,7 +17,8 @@
     "record": "node --env-file-if-exists=.env.local dist/record.js",
     "test:recorder:http": "node --import tsx test/recorder-http-simulation.ts",
     "paper:export": "node dist/paper-export.js",
-    "test:http:local": "node --import tsx test/run-http-validation.ts"
+    "test:http:local": "node --import tsx test/run-http-validation.ts",
+    "test:quotes:http": "node --import tsx test/quote-http-simulation.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "2.3.1",
