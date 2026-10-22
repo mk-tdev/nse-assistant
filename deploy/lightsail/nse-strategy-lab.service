@@ -1,0 +1,15 @@
+[Unit]
+Description=Independent NSE strategy lab, quote journal and historical research runs
+Requires=docker.service
+After=docker.service nse-quotes.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/docker run --rm --init --name nse-strategy-lab --read-only --cap-drop=ALL --security-opt=no-new-privileges --env RECORDER_DATA_DIR=/data --env STRATEGY_LAB_DIR=/lab --env PAPER_CONTROL_DIR=/controls --mount type=bind,source=/var/lib/nse-recorder,target=/data,readonly --mount type=bind,source=/var/lib/nse-strategy-lab,target=/lab --mount type=bind,source=/var/lib/nse-paper-controls,target=/controls nse-dashboard:strategy-lab node dist/strategy-lab-worker.js
+ExecStop=-/usr/bin/docker stop --time 30 nse-strategy-lab
+Restart=always
+RestartSec=10
+TimeoutStopSec=40
+
+[Install]
+WantedBy=multi-user.target

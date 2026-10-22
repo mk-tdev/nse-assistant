@@ -3,6 +3,8 @@ import {existsSync} from 'node:fs';
 import {join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {DatabaseSync} from 'node:sqlite';
+import {StrategyLabStore} from './strategy-lab-store.js';
+import {labStrategies} from './strategy-registry.js';
 import {ControlStore,cohortFiles,exitSchema,entrySchema} from './paper-control-store.js';
 import {PaperLedger,type PaperConfig} from './paper.js';
 import {loadPaperConfig} from './paper-worker.js';
@@ -13,17 +15,18 @@ export function storedStates(dir:string,file:string,session?:string){
  if(!existsSync(join(dir,file)))return [];
  const db=new DatabaseSync(join(dir,file),{readOnly:true});try{db.exec('PRAGMA busy_timeout=1500;');return db.prepare('SELECT body FROM paper_states').all().map(r=>JSON.parse(String(r.body))).filter(s=>!session||s.session===session);}finally{db.close();}
 }
-export function exitTargets(dir:string,store:ControlStore,input:ReturnType<typeof exitSchema.parse>){
+export function exitTargets(dir:string,store:ControlStore,input:ReturnType<typeof exitSchema.parse>,lab?:StrategyLabStore){
  const targets:{cohort:string;id:string;symbol:string}[]=[];
  for(const [cohort,file] of Object.entries(cohortFiles))if(input.scope==='all'||input.cohort===cohort)for(const s of storedStates(dir,file,input.session))if(['open','pending-entry'].includes(s.status)&&(input.scope!=='position'||input.positionId===s.id))targets.push({cohort,id:s.id,symbol:s.symbol});
  if(input.scope==='all'||input.cohort==='mcx-manual')for(const s of store.positions())if(s.status==='open'&&(input.scope!=='position'||input.positionId===s.id))targets.push({cohort:'mcx-manual',id:s.id,symbol:s.symbol});
+ if(lab)for(const s of lab.positions('live/'+input.session).filter(s=>['open','pending-entry'].includes(s.status)))if((input.scope==='all'||input.cohort===s.strategy)&&(input.scope!=='position'||input.positionId===s.id))targets.push({cohort:s.strategy,id:s.id,symbol:s.symbol});
  return targets;
 }
-export async function processCommands(dir:string,store:ControlStore,config:PaperConfig,now=Date.now()){
+export async function processCommands(dir:string,store:ControlStore,config:PaperConfig,now=Date.now(),lab?:StrategyLabStore){
  let quoteFile:{rows:QuoteRow[];sessionDate:string}={rows:[],sessionDate:day(now)},contracts:CommodityContract[]=[];
  try{quoteFile=JSON.parse(await readFile(join(dir,'quotes.json'),'utf8'));}catch{}
  try{contracts=JSON.parse(await readFile(join(dir,'commodities.json'),'utf8')).contracts??[];}catch{}
- for(const row of store.pending()){
+ for(const row of store.pending(['entry','exit'])){
   const id=String(row.id),created=Number(row.created_at),body=JSON.parse(String(row.body));
   if(now-created>90000){store.finish(id,{status:'expired',reason:'No eligible post-request quote arrived within 90 seconds',results:row.result?JSON.parse(String(row.result)).results??[]:[]});continue;}
   if(row.kind==='entry'){
@@ -41,6 +44,7 @@ export async function processCommands(dir:string,store:ControlStore,config:Paper
    if(target.cohort==='mcx-manual'){
     const s=store.positions().find(s=>s.id===target.id);if(!s||s.status==='closed'){completed.push({positionId:target.id,status:'already_closed'});continue;}if(!mark)continue;
     store.db.exec('BEGIN IMMEDIATE');try{const current=store.db.prepare('SELECT body FROM manual_positions WHERE id=?').get(s.id);const v=JSON.parse(String(current!.body));if(v.status==='open'){Object.assign(v,{status:'closed',exit:mark.price,exitAt:mark.observedAt,exitReason:'manual_observed_quote',updatedAt:now,grossPnl:(mark.price-v.entry)*v.quantity*v.multiplier*(v.side==='short'?-1:1),exitMark:mark});store.db.prepare('UPDATE manual_positions SET body=? WHERE id=?').run(JSON.stringify(v),s.id);store.db.prepare('INSERT OR IGNORE INTO manual_events VALUES(?,?,?)').run(id+'/'+s.id,now,JSON.stringify(v));}store.db.exec('COMMIT');completed.push({positionId:s.id,status:'closed',exit:v.exit});}catch(e){store.db.exec('ROLLBACK');throw e;}
+   }else if(lab&&labStrategies.some(s=>s.id===target.cohort)){const outcome=lab.manualExit(target.id,created,quote,now,id);if(outcome)completed.push(outcome);
    }else{
     const file=cohortFiles[target.cohort as keyof typeof cohortFiles];if(!file)continue;
     const state=storedStates(dir,file).find(s=>s.id===target.id);if(!state||state.status==='closed'){completed.push({positionId:target.id,status:'already_closed'});continue;}if(state.status==='open'&&!mark)continue;
@@ -54,5 +58,5 @@ export async function processCommands(dir:string,store:ControlStore,config:Paper
   if(completed.length>=body.targets.length)store.finish(id,{status:'completed',results:completed});
  }
 }
-export async function consoleLoop(){const dir=process.env.RECORDER_DATA_DIR??'/data',controlDir=process.env.PAPER_CONTROL_DIR??'/controls',store=new ControlStore(controlDir),config=await loadPaperConfig();if(!config)throw Error('PAPER_DISABLED');let stopping=false;process.once('SIGTERM',()=>{stopping=true;});process.once('SIGINT',()=>{stopping=true;});try{while(!stopping){try{await writeFile(join(controlDir,'health.json.tmp'),JSON.stringify({observedAt:new Date().toISOString(),paperOnly:true}));await rename(join(controlDir,'health.json.tmp'),join(controlDir,'health.json'));await processCommands(dir,store,config);}catch{console.error('PAPER_CONTROL_CYCLE_FAILED');}await new Promise(r=>setTimeout(r,1000));}}finally{store.close();}}
+export async function consoleLoop(){const dir=process.env.RECORDER_DATA_DIR??'/data',controlDir=process.env.PAPER_CONTROL_DIR??'/controls',store=new ControlStore(controlDir),config=await loadPaperConfig();if(!config)throw Error('PAPER_DISABLED');const lab=process.env.STRATEGY_LAB_DIR?new StrategyLabStore(process.env.STRATEGY_LAB_DIR):undefined;let stopping=false;process.once('SIGTERM',()=>{stopping=true;});process.once('SIGINT',()=>{stopping=true;});try{while(!stopping){try{await writeFile(join(controlDir,'health.json.tmp'),JSON.stringify({observedAt:new Date().toISOString(),paperOnly:true}));await rename(join(controlDir,'health.json.tmp'),join(controlDir,'health.json'));await processCommands(dir,store,config,Date.now(),lab);}catch{console.error('PAPER_CONTROL_CYCLE_FAILED');}await new Promise(r=>setTimeout(r,1000));}}finally{lab?.close();store.close();}}
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href)consoleLoop().catch(()=>{console.error('PAPER_CONSOLE_FAILED');process.exitCode=1;});

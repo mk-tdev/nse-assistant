@@ -1,0 +1,4 @@
+import {readFile} from 'node:fs/promises';
+import {join} from 'node:path';
+export async function labView(dir:string,session:string){const read=async(file:string,fallback:unknown)=>{try{return JSON.parse(await readFile(join(dir,file),'utf8'));}catch{return fallback;}};const registry=await read('registry.json',{strategies:[]}),health=await read('health.json',null),runs=await read('runs.json',{runs:[]}),live=await read('live-'+session+'.json',null);return {registry,health,healthy:health&&Date.now()-Date.parse(health.observedAt)<20000,runs:runs.runs.map((r:any)=>({id:r.id,mode:r.mode,status:r.status,createdAt:r.created_at,input:r.body?.input??null})),live};}
+export async function labRun(dir:string,id:string){if(!/^[a-f0-9-]{36}$/.test(id))throw Error('LAB_INVALID_RUN_ID');return JSON.parse(await readFile(join(dir,'run-'+id+'.json'),'utf8'));}
