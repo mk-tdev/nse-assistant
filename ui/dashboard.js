@@ -24,7 +24,7 @@ function health(){const today=marketClock(),r=data?.report,age=r?Math.max(0,(Dat
 }
 async function json(url){const r=await fetch(url,{cache:'no-store',credentials:'same-origin',signal:AbortSignal.timeout(10000)});if(r.status===401){location.reload();throw Error('Sign-in required');}if(!r.ok)throw Error('HTTP '+r.status);return r.json();}
 async function refresh(){if(inFlight)return;inFlight=true;$('refresh').disabled=true;try{const date=$('session').value;const d=await json('/api/dashboard'+(/^\d{4}-\d{2}-\d{2}$/.test(date)?'?session='+date:''));data=d;lastSuccess=Date.now();disconnected=false;
- const session=$('session');if(arr(d.sessions).join()!==[...session.options].map(o=>o.value).join()){session.replaceChildren(...d.sessions.map(s=>{const o=el('option',s);o.value=s;return o;}));}session.value=d.selectedSession;
+ const session=$('session'),options=[['latest','Latest session · auto'],...d.sessions.map(s=>[s,s])];if(options.map(o=>o[0]).join()!==[...session.options].map(o=>o.value).join()){session.replaceChildren(...options.map(([v,t])=>{const o=el('option',t);o.value=v;return o;}));}session.value=/^\d{4}-\d{2}-\d{2}$/.test(date)?date:'latest';
  try{quotes=await json('/api/quotes');}catch{quotes=null;}
  const old=$('cohort').value,choices=[['baseline','Nifty 50 · original ORB'],...arr(d.report.paper?.research?.cohorts).map(c=>[c.name,label(c.name)])];$('cohort').replaceChildren(...choices.map(([v,t])=>{const o=el('option',t);o.value=v;return o;}));if(choices.some(c=>c[0]===old))$('cohort').value=old;
  render();await loadChart();}catch(e){disconnected=true;toast('AWS report unavailable. Displayed data may be stale.');}finally{inFlight=false;$('refresh').disabled=false;health();}}
