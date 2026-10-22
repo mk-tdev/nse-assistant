@@ -132,6 +132,24 @@ export class PaperLedger {
     this.event(s,'agent-protective-exit',now,evidence.sourceTime,'agent_protective_exit',{evidence,execution:'protective paper mark at observed completed close; not executable fill; historical stop path unresolved'});
     this.db.prepare('UPDATE paper_states SET body=? WHERE id=?').run(JSON.stringify(s),id);this.db.exec('COMMIT');return true;}catch(e){this.db.exec('ROLLBACK');throw e;}
   }
+  /** User-requested research exit at a fresh observed quote. No broker call. */
+  manualExit(id:string,mark:{price:number;observedAt:number;sourceTime:number;source:string;policy:string}|null,requestId:string,now:number){
+    // Process any previously observed stop/target first; user action cannot overwrite an earlier known exit.
+    this.tickExisting(id,now);
+    this.db.exec('BEGIN IMMEDIATE');
+    try{
+      const row=this.db.prepare('SELECT body FROM paper_states WHERE id=?').get(id);if(!row)throw Error('PAPER_POSITION_NOT_FOUND');
+      const s:PaperState=JSON.parse(String(row.body));
+      if(s.status==='closed'){this.db.exec('COMMIT');return {status:'already_closed',positionId:id,exitReason:s.exitReason};}
+      if(s.status==='pending-entry') {s.status='closed';s.exitReason='manual_cancel_pending';s.reasons=['user_cancelled_pending_paper_entry'];}
+      else if(s.status==='open'){
+        if(!mark||!Number.isFinite(mark.price)||mark.price<=0||mark.observedAt>now||mark.sourceTime>now||now-mark.observedAt>15000||now-mark.sourceTime>60000||mark.sourceTime<(s.entryAt??0))throw Error('PAPER_EXIT_QUOTE_STALE_OR_UNAVAILABLE');
+        s.status='closed';s.exit=mark.price;s.exitAt=mark.observedAt;s.exitReason='manual_observed_quote';s.grossPnl=s.unknownOutcome?null:(mark.price-s.entry!)*s.quantity;s.netPnl=null;s.reasons=s.unknownOutcome?['manual_closed_unknown_prior_path']:['user_requested_paper_exit'];
+      }else {this.db.exec('COMMIT');return {status:'not_open',positionId:id};}
+      s.updatedAt=now;this.event(s,'manual/'+requestId,now,mark?.sourceTime??null,'manual_exit',{...s,requestId,mark,execution:'Manual research snapshot mark, not broker execution; intrabar ordering unverified'});
+      this.db.prepare('UPDATE paper_states SET body=? WHERE id=?').run(JSON.stringify(s),id);this.db.exec('COMMIT');return {status:'closed',positionId:id,unknownOutcome:s.unknownOutcome,exit:s.exit};
+    }catch(e){this.db.exec('ROLLBACK');throw e;}
+  }
   snapshot(session:string,compact=false) {
     const states=this.list().filter(s=>s.session===session);
     return {simulatedOnly:true,exactQualification:false,mode:this.config.mode,observedAt:null as string|null,

@@ -8,6 +8,9 @@ const server = http.createServer((req, res) => {
   const url = new URL(req.url || '', 'http://localhost');
   const pathname = url.pathname;
 
+  if(req.headers['x-paper-console-fixture']==='mcx' && req.method==='POST' && pathname==='/v2/marketfeed/quote'){
+    let text='';req.on('data',c=>text+=c);req.on('end',()=>{const b=JSON.parse(text);const data=Object.fromEntries(Object.entries(b).map(([segment,ids])=>[segment,Object.fromEntries(ids.map(id=>[String(id),{last_price:segment==='MCX_COMM'?150000:103,last_trade_time:'21/10/2026 10:00:00',volume:5000}]))]));res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({status:'success',data}));});return;
+  }
   // Recorder-only synthetic HTTP scenarios. Never send live credentials to this mock.
   if (req.headers['x-recorder-fixture']) {
     const mode = req.headers['x-recorder-fixture'];

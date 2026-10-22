@@ -37,6 +37,10 @@ test('two independent reviewer handles cannot overspend their shared daily allow
  const x=new Reviewer(a,'sessionA',()=>{},Date.now,e,fetcher,()=>at(date,'11:00')),y=new Reviewer(b,'sessionB',()=>{},Date.now,e,fetcher,()=>at(date,'11:00'));
  try{x.submit([item('a')]);y.submit([item('b')]);assert.equal(calls,1);assert.equal(y.snapshot().budget.reservedUsd,.025);release();await x.drain();assert.equal(y.snapshot().budget.remainingUsd,0);}finally{await x.close();await y.close();a.close();b.close();rmSync(dir,{recursive:true,force:true});}
 });
-test('budget settings cannot silently raise the user-authorized one-dollar ceiling',()=>{
- const db=new DatabaseSync(':memory:');for(const value of ['1.01','-1','NaN'])assert.throws(()=>new Reviewer(db,date,()=>{},Date.now,{...env,OPENAI_REVIEW_DAILY_BUDGET_USD:value}),/INVALID_DAILY_BUDGET/);db.close();
+test('budget settings cannot silently raise the user-authorized three-dollar ceiling',()=>{
+ const db=new DatabaseSync(':memory:');for(const value of ['3.01','-1','NaN'])assert.throws(()=>new Reviewer(db,date,()=>{},Date.now,{...env,OPENAI_REVIEW_DAILY_BUDGET_USD:value}),/INVALID_DAILY_BUDGET/);db.close();
+});
+test('GPT-6 Luna supports low reasoning with the explicitly configured three-dollar limit',async()=>{
+ const db=new DatabaseSync(':memory:');const r=new Reviewer(db,date,()=>{},Date.now,{...env,OPENAI_REVIEW_MODEL:'gpt-6-luna',OPENAI_REVIEW_DAILY_BUDGET_USD:'3',OPENAI_REVIEW_MAX_REQUESTS:'120'},answer);
+ try{r.submit([item('luna6')]);await r.drain();assert.equal(r.snapshot().model,'gpt-6-luna');assert.equal(r.snapshot().budget.dailyLimitUsd,3);assert.equal(r.snapshot().maxRequestsPerSession,120);assert.equal(r.snapshot().budget.reservedUsd,.025);assert.equal(r.snapshot().budget.inputRateUpperUsdPerMillion,.25);}finally{await r.close();db.close();}
 });

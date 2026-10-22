@@ -1,0 +1,14 @@
+[Unit]
+Description=Audited manual paper controls (no broker credentials or orders)
+Requires=docker.service
+After=docker.service nse-quotes.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/docker run --rm --init --name nse-paper-console --read-only --cap-drop=ALL --security-opt=no-new-privileges --env RECORDER_DATA_DIR=/data --env PAPER_CONTROL_DIR=/controls --env-file /etc/nse-assistant/paper.env --mount type=bind,source=/var/lib/nse-recorder,target=/data --mount type=bind,source=/var/lib/nse-paper-controls,target=/controls nse-dashboard:local node dist/paper-console.js
+ExecStop=-/usr/bin/docker stop --time 20 nse-paper-console
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
