@@ -114,3 +114,14 @@ and unknown outcomes for missing price intervals. It is in-sample exploration,
 not evidence of a profitable live strategy. New experiments remain disabled until
 that comparison is reviewed, then may be enabled for prospective paper recording.
 8/21 EMA pullback is research only and is not registered or enabled.
+
+AWS comparison completed before activation: run
+`708ea2e0-f735-4355-aa3b-23fc84121cfe`, OHLC proxy, 21–23 October 2026.
+21 October blocked: unavailable prior-20 volume history. On 22 October,
+consolidation: 31 entries, net −₹2,490.56; retest: 7 entries, net −₹84.63.
+On 23 October, consolidation: 26 entries, net −₹1,471.96; retest: 1 entry,
+net −₹17.97. Net includes estimated charges and slippage. No unknown entered
+outcomes on the two complete sessions. Neither experiment was profitable in this
+sample. Both were enabled for prospective paper observation after this review;
+existing strategy controls/configurations were checked unchanged. Research notes
+for the unimplemented EMA idea are in `research/ema-8-21-pullback.md`.
