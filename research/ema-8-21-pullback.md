@@ -1,7 +1,33 @@
 # 8/21 EMA pullback — research only
 
-Reviewed 23 October 2026. Not implemented, registered, backtested or enabled.
-There is no verified win rate or profitability estimate for this proposal.
+Reviewed 23 October 2026. Registered as `ema-pullback-10-v1`, **disabled**, implementing
+the core rule below (no volume filter yet). There is no verified win rate or
+profitability estimate for this proposal.
+
+## Implementation status (added after this review)
+
+The core trend/pullback/reclaim rule is implemented in `src/ema.ts` (plain EMA with
+fixed SMA seeding) and `src/setup-signals.ts` (`cfg.setup==='ema-pullback'` branch),
+unit-tested in `test/ema.test.ts` and `test/ema-pullback.test.ts` against synthetic
+fixtures only. `src/midday-signals.ts` was extended so this setup's live decision path
+fetches a continuous per-session candle range for warm-up (at least 200 prior bars),
+instead of the same-time-of-day sampling the other midday setups use, since an EMA
+needs a gap-free chronological series, not slot samples.
+
+It has **not** been backtested against real recorded sessions: this repository's local
+candle history (two symbols, a few sessions) is far short of the 20-session, 75-bar/day
+continuous history the rule requires, so no realistic OHLC-proxy or quote-replay result
+can be produced here. Before enabling it in the live strategy lab, run the dashboard's
+existing backtest tool (OHLC proxy, then quote replay) on AWS, exactly as was done for
+`midday-consolidation-10-v1` and `orb-retest-10-v1` in `docs/research-cohorts.md`, and
+record the result there. It stays disabled until that review happens.
+
+The shared session-approximate-VWAP gate that every other setup in `setup-signals.ts`
+goes through (confirmation close must exceed cumulative session VWAP) also applies here,
+as an extra conservative filter beyond what the sources below describe. Relative volume
+at the confirmation candle is computed and recorded as evidence (reusing the same
+prior-20-session median as every other setup) but is **not** a gate for this variant,
+matching the "core rule first, volume-confirmed variant separately" plan below.
 
 ## What the sources actually say
 

@@ -1,13 +1,22 @@
-import {at,FIVE,minute,validCandle,type Candle} from './model.js';
+import {at,FIVE,day,minute,validCandle,type Candle} from './model.js';
 import {vwap,relativeVolume} from './analysis.js';
+import {ema} from './ema.js';
 import {firstOrbCandidate,type Candidate} from './strategy-selection.js';
 import type {LabStrategy} from './strategy-registry.js';
+export const SESSION_BARS=(at('2026-01-01','15:30')-at('2026-01-01','09:15'))/FIVE;
 /** Only completed prefix bars are passed here. All setup levels precede the decision. */
 export function firstStrategyCandidate(cfg:LabStrategy,symbol:string,session:string,bars:Candle[],history:Candle[],previous:string[],delayMs=10000,window=cfg.signalWindow??{start:'09:30',end:'11:00'}):Candidate|null{
  if(!cfg.setup)return firstOrbCandidate(symbol,session,bars,history,previous,delayMs,window);
  if(previous.length!==20)return null;
  const cs=bars.filter(validCandle).sort((a,b)=>a.start-b.start),past=new Map<number,Candle[]>();
  for(const b of history){const t=minute(b.start);if(!past.has(t))past.set(t,[]);past.get(t)!.push(b);}
+ // EMA warm-up needs a gap-free chronological series, not same-slot samples: every prior session must be a complete day.
+ const priorDaySeries=cfg.setup!=='ema-pullback'?[]:[...history].filter(validCandle).sort((a,b)=>a.start-b.start);
+ const priorDaysComplete=cfg.setup!=='ema-pullback'||previous.every(d=>{
+  const dayBars=priorDaySeries.filter(b=>day(b.start)===d);
+  if(dayBars.length!==SESSION_BARS)return false;
+  return dayBars.every((b,j)=>b.start===at(d,'09:15')+j*FIVE);
+ });
  for(let i=0;i<cs.length;i++){
   const c=cs[i]!;if(c.start<at(session,window.start)||c.start+FIVE>at(session,window.end))continue;
   const prefix=cs.slice(0,i+1).filter(b=>b.start>=at(session,'09:15'));
@@ -22,7 +31,7 @@ export function firstStrategyCandidate(cfg:LabStrategy,symbol:string,session:str
    // A new breakout, not a continuation of a candle already above this box.
    if(high<=stop||width>0.01||c.close<=high||relative.missing||relative.ratio===null||relative.ratio<1.5||meanVolume<=0||c.volume!<meanVolume*1.2)continue;
    rv=relative.ratio;evidence={setup:cfg.setup,boxStart:box[0]!.start,boxEnd:c.start,boxBars:box,boxWidthPct:width*100,maximumBoxWidthPct:1,volumeVsBox:c.volume!/meanVolume,minimumVolumeVsBox:1.2};
-  }else{
+  }else if(cfg.setup==='breakout-retest'){
    const opening=prefix.filter(b=>b.start<at(session,'09:30'));if(opening.length!==3)continue;
    high=Math.max(...opening.map(b=>b.high));let found:{b:Candle;retest:Candle[];rv:number}|undefined;
    // Breakout must be 1–3 completed bars earlier. A close below the level invalidates it.
@@ -35,6 +44,33 @@ export function firstStrategyCandidate(cfg:LabStrategy,symbol:string,session:str
    }
    if(!found)continue;stop=Math.min(...found.retest.map(b=>b.low));rv=found.rv;
    evidence={setup:cfg.setup,openingBars:opening,breakoutBar:found.b,retestBars:found.retest,touchTolerancePct:0.1,maximumRetestBars:3,volumeMeasuredAt:'breakout candle',confirmation:'bullish retest candle closes above opening-range high and session approximate VWAP'};
+  }else{
+   // ema-pullback: trend must already be established before the pullback begins, 200+ bar continuous warm-up.
+   if(!priorDaysComplete||c.start<at(session,'09:45'))continue;
+   const series=[...priorDaySeries,...prefix],k=series.length-1;
+   if(k<200)continue;
+   const closes=series.map(b=>b.close),e8=ema(closes,8),e21=ema(closes,21);
+   let found:{pullback:Candle[];trendIdx:number}|undefined;
+   for(let p=1;p<=3&&!found;p++){
+    const trendIdx=k-p-1;
+    if(trendIdx<3||e8[trendIdx]===null||e21[trendIdx]===null||e8[trendIdx-3]===null||e21[trendIdx-3]===null)continue;
+    const trendBar=series[trendIdx]!;
+    if(!(trendBar.close>e8[trendIdx]!&&e8[trendIdx]!>e21[trendIdx]!&&e8[trendIdx]!>e8[trendIdx-3]!&&e21[trendIdx]!>e21[trendIdx-3]!))continue;
+    const pullback=series.slice(trendIdx+1,k);
+    if(pullback.some((b,j)=>{const idx=trendIdx+1+j;return e21[idx]===null||b.close<=e21[idx]!;}))continue;
+    const touchesZone=pullback.some((b,j)=>{const idx=trendIdx+1+j,hi=Math.max(e8[idx]!,e21[idx]!),lo=Math.min(e8[idx]!,e21[idx]!);return b.low<=hi&&b.low>=lo;});
+    if(!touchesZone)continue;
+    found={pullback,trendIdx};
+   }
+   if(!found)continue;
+   const prevBar=series[k-1]!;
+   if(!(c.close>c.open&&e8[k]!==null&&c.close>e8[k]!&&c.close>prevBar.high))continue;
+   high=prevBar.high;stop=Math.min(...found.pullback.map(b=>b.low));
+   if(high<=stop||stop>=c.close)continue;
+   const relative=relativeVolume(c,past.get(minute(c.start))??[],previous);
+   if(relative.missing||relative.ratio===null)continue;
+   rv=relative.ratio;
+   evidence={setup:cfg.setup,warmupBars:k,trendBar:series[found.trendIdx],pullbackBars:found.pullback,ema8:e8[k],ema21:e21[k],precedingBar:prevBar,note:'Core trend/pullback/reclaim rule; volume is recorded as evidence only and is not a gate for this variant.'};
   }
   return {id:`${cfg.id}/${session}/${symbol}/${c.start}`,symbol,session,signalStart:c.start,decidedAt:c.start+FIVE+delayMs,signalClose:c.close,rangeHigh:high,stop,vwap:vw,relativeVolume:rv,extension:(c.close-high)/(high-stop),setupEvidence:evidence,source:'Historical final bars; modeled end+10s availability; setup defined on completed prefix only'};
  }

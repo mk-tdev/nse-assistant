@@ -124,4 +124,23 @@ net −₹17.97. Net includes estimated charges and slippage. No unknown entered
 outcomes on the two complete sessions. Neither experiment was profitable in this
 sample. Both were enabled for prospective paper observation after this review;
 existing strategy controls/configurations were checked unchanged. Research notes
-for the unimplemented EMA idea are in `research/ema-8-21-pullback.md`.
+for the EMA idea are in `research/ema-8-21-pullback.md`.
+
+## 8/21 EMA pullback (23 October 2026)
+
+`ema-pullback-10-v1` implements the core trend/pullback/reclaim rule from
+`research/ema-8-21-pullback.md`: a 200+ bar continuous EMA8/EMA21 warm-up (every one
+of the prior 20 sessions must be a complete 75-bar day, not same-slot samples), an
+established rising trend, a 1-3 bar pullback that trades into the EMA8-EMA21 zone
+without closing below EMA21, and a bullish candle that recloses above EMA8 and the
+preceding bar's high. Stop is the pullback low. It shares the same fixed-10-share
+sizing, estimated costs, 1bp slippage and 15:10 time exit as every other strategy, and
+the same shared approximate-VWAP confirmation gate used by every setup in
+`setup-signals.ts`. Relative volume is recorded as evidence only, not a gate, for this
+variant; a volume-confirmed variant is a possible separate follow-up, not implemented.
+
+Registered **disabled**. It has not been backtested against real sessions: this change
+only adds the signal logic and unit tests against synthetic fixtures, not a result.
+Enable only after running the dashboard's OHLC-proxy and quote-replay backtests on AWS
+and recording the outcome here, the same process used for the consolidation and retest
+setups above.
