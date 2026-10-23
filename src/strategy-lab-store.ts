@@ -72,6 +72,8 @@ export class StrategyLabStore{
  this.db.exec('COMMIT');}catch(e){this.db.exec('ROLLBACK');throw e;}}
  barProxy(runId:string,symbol:string,c:{start:number;open:number;high:number;low:number;close:number}){
  const quote=(price:number,time:number):QuoteRow=>({symbol,exchangeSegment:'NSE_EQ',lastPrice:price,observedAt:new Date(time).toISOString(),rawSourceTimestamp:new Date(time).toISOString(),error:null});
+ // New setup experiments must not turn a missing OHLC interval into a known win/loss.
+ for(const p of this.positions(runId,undefined,symbol).filter(p=>p.status==='open'&&p.config.setup&&p.lastQuoteAt!==null&&c.start-p.lastQuoteAt>=300000)){p.unknownOutcome=true;p.reasons=['bar_proxy_missing_interval'];this.save(p);this.event(p,'unknown-bar-gap','unknown_outcome',{previousBarEnd:p.lastQuoteAt,nextBarStart:c.start},c.start);}
  this.applyQuotes(runId,[quote(c.open,c.start)],c.start,symbol);
  this.db.exec('BEGIN IMMEDIATE');try{for(const p of this.positions(runId,undefined,symbol).filter(p=>p.status==='open')){
   let price:number|null=null,reason:string|null=null;

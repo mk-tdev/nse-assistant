@@ -74,3 +74,43 @@ Midday is initially disabled, then enabled only after the requested historical c
 The 21–23 October OHLC comparison is exploratory: midday was chosen after observing KROSS on 23 October, so these dates are not out-of-sample evidence. Uses future-bar proxy fills and indicative costs. Missing history/paths and unavailable pre-session membership remain flagged. Historical runs never rewrite the live strategy snapshot or positions.
 
 Historical qualification coverage is reported independently of realized trade paths. Missing current prefixes or prior-20 same-slot baseline data mark a comparison partial/blocked, including a zero-trade session that could not be evaluated. RVOL calculations group history by time slot before applying the unchanged median calculation; this avoids repeatedly scanning unrelated historical times.
+
+## Fresh consolidation and retest paper experiments (23 October 2026)
+
+These two independent accounts keep all existing baselines. Each takes 10 shares,
+long-only, at most one first eligible attempt per stock/session. The universe is
+that session's recorded Nifty plus frozen screener watchlist, not a new hindsight
+stock list. Both use completed five-minute bars, a contiguous session prefix,
+20 prior sessions' same-slot volume, and approximate HLC3 bar VWAP. No LLM can
+invent missing prices or override these requirements. Missing qualification data
+blocks signals; missing execution coverage keeps outcomes unknown.
+
+* `midday-consolidation-10-v1`: signal candles start at/after 11:00 and finish
+  by 14:00 IST. Freeze the **six preceding five-minute candles** as a fresh
+  30-minute box (all start at/after 10:30). Box width / high must be ≤1%.
+  Signal close must exceed box high and session approximate VWAP. Signal volume
+  must be ≥1.5× prior-20 same-slot median and ≥1.2× mean box volume. Stop is box
+  low. This differs from the preserved midday ORB, which uses the morning range.
+* `orb-retest-10-v1`: confirmation candles start at/after 09:35 and finish by
+  14:00 IST. The 09:15–09:30 opening high is resistance. A fresh breakout must
+  close above it and approximate VWAP, have RVOL ≥1.5×, and follow a close at/below
+  the level. Within the next 1–3 completed bars, a bullish candle must touch
+  within 0.1% of the level and close above the level and current VWAP. Every
+  intervening close must hold above the level. Stop is the lowest low since
+  breakout, strictly below resistance. RVOL displayed is the breakout's RVOL.
+  This conservative version requires a traded retest below resistance; a pullback
+  that remains entirely above it does not qualify.
+
+Entry uses the first eligible **future observed quote**, within 60s of an actual
+recorded decision; no candle-open backdating. Target is 2× actual entry-to-stop
+risk. Existing estimated charges and 1bp per-side slippage apply. Time exit begins
+15:10 IST. Each setup's bars, levels and baseline observations are journaled.
+The engine cannot make original quote-replay decisions for dates before its
+installation; those replays are blocked rather than fabricated.
+
+Historical comparison uses final-bar OHLC proxy execution: modeled decision at
+bar end+10s, strictly later bar-open entry within 330s, stop-first ambiguous bars,
+and unknown outcomes for missing price intervals. It is in-sample exploration,
+not evidence of a profitable live strategy. New experiments remain disabled until
+that comparison is reviewed, then may be enabled for prospective paper recording.
+8/21 EMA pullback is research only and is not registered or enabled.

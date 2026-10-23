@@ -1,7 +1,7 @@
 import {at,FIVE,day,minute,validCandle,type Candle} from './model.js';
 import {vwap,relativeVolume} from './analysis.js';
 import type {LabStrategy} from './strategy-registry.js';
-export type Candidate={id:string;symbol:string;session:string;signalStart:number;decidedAt:number;signalClose:number;rangeHigh:number;stop:number;vwap:number;relativeVolume:number;extension:number;source:string};
+export type Candidate={setupEvidence?:unknown;id:string;symbol:string;session:string;signalStart:number;decidedAt:number;signalClose:number;rangeHigh:number;stop:number;vwap:number;relativeVolume:number;extension:number;source:string};
 export function firstOrbCandidate(symbol:string,session:string,bars:Candle[],history:Candle[],previous:string[],delayMs=10000,window={start:'09:30',end:'11:00'}):Candidate|null{
  const cs=bars.filter(validCandle).sort((a,b)=>a.start-b.start),range=cs.filter(c=>c.start>=at(session,'09:15')&&c.start<at(session,'09:30'));
  if(range.length!==3||range.some(c=>c.volume===null)||previous.length!==20)return null;
@@ -30,11 +30,11 @@ export function openingSelection(session:string,symbols:string[],current:Map<str
  ranked.forEach((v,i)=>{v.rank=i+1;v.eligible=i<cfg.topN;v.reason=v.eligible?'selected_at_opening_cutoff':'outside_top_10';});return vals;
 }
 /** Qualification coverage is separate from trade outcomes: missing history is not a no-signal. */
-export function qualificationCoverage(session:string,symbols:string[],current:Map<string,Candle[]>,history:Map<string,Candle[]>,previous:string[],window={start:'09:30',end:'11:00'}){
+export function qualificationCoverage(session:string,symbols:string[],current:Map<string,Candle[]>,history:Map<string,Candle[]>,previous:string[],window={start:'09:30',end:'11:00'},baselineSlots=1){
  let usableSlots=0,missingBaselineSlots=0,missingPrefixSlots=0;const unavailable:string[]=[];
  for(const symbol of symbols){const currentValid=new Set((current.get(symbol)??[]).filter(c=>validCandle(c)&&c.volume!==null).map(c=>c.start)),pastValid=new Set((history.get(symbol)??[]).filter(c=>validCandle(c)&&c.volume!==null).map(c=>day(c.start)+'/'+minute(c.start)));let usable=0;
   for(let t=at(session,window.start);t+FIVE<=at(session,window.end);t+=FIVE){let prefix=true;for(let p=at(session,'09:15');p<=t;p+=FIVE)if(!currentValid.has(p)){prefix=false;break;}
-   const baseline=previous.length===20&&previous.every(date=>pastValid.has(date+'/'+minute(t)));if(!prefix)missingPrefixSlots++;if(!baseline)missingBaselineSlots++;if(prefix&&baseline){usable++;usableSlots++;}}
+   const baseline=previous.length===20&&previous.every(date=>Array.from({length:baselineSlots},(_,i)=>minute(t-i*FIVE)).every(slot=>pastValid.has(date+'/'+slot)));if(!prefix)missingPrefixSlots++;if(!baseline)missingBaselineSlots++;if(prefix&&baseline){usable++;usableSlots++;}}
   if(!usable)unavailable.push(symbol);
  }return {status:usableSlots===0?'blocked':missingBaselineSlots||missingPrefixSlots?'partial':'complete',usableSlots,missingBaselineSlots,missingPrefixSlots,stocksWithoutUsableSlot:unavailable,reason:usableSlots===0?'No signal slots have a complete current prefix and prior-20 same-slot volume baseline':missingBaselineSlots||missingPrefixSlots?'Some signal slots lack required price/volume history':null};
 }
