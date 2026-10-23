@@ -8,13 +8,14 @@ import type {Candidate,SelectionRow} from './strategy-selection.js';
 export type LabPosition={id:string;runId:string;strategy:string;session:string;symbol:string;status:string;signal:number;decidedAt:number;entryAt:number|null;entry:number|null;stop:number;target:number|null;exitAt:number|null;exit:number|null;exitReason:string|null;quantity:number;grossPnl:number|null;netPnl:number|null;unknownOutcome:boolean;reasons:string[];updatedAt:number;lastQuoteAt:number|null;lastPrice:number|null;candidate:Candidate;config:LabStrategy;configHash:string;costs:ReturnType<typeof estimateCosts>|null;initialRisk:number|null;executionMode:string};
 export class StrategyLabStore{
  readonly db:DatabaseSync;
- constructor(readonly dir:string){mkdirSync(dir,{recursive:true,mode:0o700});const file=join(dir,'strategy-lab.sqlite');this.db=new DatabaseSync(file);chmodSync(file,0o600);this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;
+ constructor(readonly dir:string){mkdirSync(dir,{recursive:true,mode:0o700});const file=join(dir,'strategy-lab.sqlite');this.db=new DatabaseSync(file);chmodSync(file,0o600);this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; PRAGMA temp_store=MEMORY;
  CREATE TABLE IF NOT EXISTS lab_runs(id TEXT PRIMARY KEY,created_at INTEGER NOT NULL,mode TEXT NOT NULL,status TEXT NOT NULL,body TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS lab_positions(id TEXT PRIMARY KEY,run_id TEXT NOT NULL,strategy_id TEXT NOT NULL,session TEXT NOT NULL,symbol TEXT NOT NULL,body TEXT NOT NULL);
  CREATE INDEX IF NOT EXISTS lab_positions_run ON lab_positions(run_id,strategy_id,session);
  CREATE INDEX IF NOT EXISTS lab_positions_symbol ON lab_positions(run_id,symbol);
  CREATE TABLE IF NOT EXISTS lab_events(id INTEGER PRIMARY KEY,position_id TEXT NOT NULL,event_key TEXT NOT NULL,observed_at INTEGER NOT NULL,kind TEXT NOT NULL,body TEXT NOT NULL,UNIQUE(position_id,event_key));
  CREATE TABLE IF NOT EXISTS lab_quotes(session TEXT NOT NULL,symbol TEXT NOT NULL,observed_at INTEGER NOT NULL,body TEXT NOT NULL,PRIMARY KEY(session,symbol,observed_at));
+ CREATE TABLE IF NOT EXISTS lab_signal_decisions(strategy_id TEXT,session TEXT,symbol TEXT,signal_start INTEGER,observed_at INTEGER,body TEXT,PRIMARY KEY(strategy_id,session,symbol,signal_start));
  CREATE TABLE IF NOT EXISTS lab_controls(strategy_id TEXT PRIMARY KEY,enabled INTEGER NOT NULL);
  CREATE TABLE IF NOT EXISTS lab_selection(run_id TEXT NOT NULL,session TEXT NOT NULL,body TEXT NOT NULL,PRIMARY KEY(run_id,session));`);}
  close(){this.db.close();}
@@ -39,7 +40,7 @@ export class StrategyLabStore{
  if(cfg.universe==='screeners'&&!screeners.includes(c.symbol))reasons.push('outside_frozen_screener_universe');
  if(cfg.universe==='stocks-in-play'&&!selection?.find(r=>r.symbol===c.symbol)?.eligible)reasons.push('not_selected_at_opening_cutoff');
  if(cfg.maxExtension!==null&&c.extension>cfg.maxExtension)reasons.push('extension_exceeds_'+cfg.maxExtension+'_opening_range_width');
- if(c.signalStart<at(c.session,'09:30')||c.signalStart+300000>at(c.session,'11:00'))reasons.push('outside_morning_signal_window');
+ const window=cfg.signalWindow??{start:'09:30',end:'11:00'};if(c.signalStart<at(c.session,window.start)||c.signalStart+300000>at(c.session,window.end))reasons.push(cfg.signalWindow?'outside_configured_signal_window':'outside_morning_signal_window');
  if(!Number.isFinite(c.extension)||c.rangeHigh<=c.stop)reasons.push('invalid_opening_range');
  if(now<c.decidedAt||now-c.decidedAt>cfg.fillTimeoutMs)reasons.push('signal_arrived_too_late_for_prospective_fill');
  const p:LabPosition={id,runId,strategy:cfg.id,session:c.session,symbol:c.symbol,status:reasons.length?'skipped':'pending-entry',signal:c.signalStart,decidedAt:c.decidedAt,entryAt:null,entry:null,stop:c.stop,target:null,exitAt:null,exit:null,exitReason:null,quantity:cfg.sizing==='fixed-10'?cfg.quantity:0,grossPnl:null,netPnl:null,unknownOutcome:false,reasons,updatedAt:now,lastQuoteAt:null,lastPrice:null,candidate:c,config:cfg,configHash:strategyHash(cfg),costs:null,initialRisk:null,executionMode};
