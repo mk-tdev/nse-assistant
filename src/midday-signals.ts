@@ -7,6 +7,7 @@ import {firstStrategyCandidate,SESSION_BARS} from './setup-signals.js';
 import type {StrategyLabStore} from './strategy-lab-store.js';
 import type {LabStrategy} from './strategy-registry.js';
 import type {Observation} from './paper.js';
+import {emaWarmupStarts} from './ema-history.js';
 /** A new decision can only consume immutable completed observations already delivered now. */
 export function middayDecisions(dir:string,store:StrategyLabStore,cfg:LabStrategy,session:string,symbols:string[],calendar:string[],now:number):Candidate[]{
  if(!cfg.signalWindow)return [];
@@ -28,10 +29,18 @@ export function middayDecisions(dir:string,store:StrategyLabStore,cfg:LabStrateg
   // ema-pullback needs a gap-free continuous series instead of same-slot samples, so it
   // fetches every candle of each prior session rather than a handful of matching times.
   const bySession=cfg.setup==='ema-pullback',slotsPerDay=bySession?SESSION_BARS:cfg.setup==='breakout-retest'?4:1;
-  const slots=bySession?[]:Array.from({length:slotsPerDay},(_,i)=>new Date(start-i*FIVE+19800000).toISOString().slice(11,16)),epochs=bySession?[]:previous.flatMap(date=>slots.map(slot=>at(date,slot)));history=[];
+  const coreStarts=cfg.emaHistory?emaWarmupStarts(previous,cfg.emaHistory):[],currentSlot=new Date(start+19800000).toISOString().slice(11,16),volumeStarts=previous.map(date=>at(date,currentSlot));
+  const slots=bySession?[]:Array.from({length:slotsPerDay},(_,i)=>new Date(start-i*FIVE+19800000).toISOString().slice(11,16)),epochs=cfg.emaHistory?[...new Set([...coreStarts,...volumeStarts])]:bySession?[]:previous.flatMap(date=>slots.map(slot=>at(date,slot)));history=[];
+  if(cfg.emaHistory){
+   const metadata=epochs.length?candleDb.prepare('SELECT source_epoch_ms FROM candles WHERE symbol=? AND source_epoch_ms IN ('+epochs.map(()=>'?').join(',')+') AND first_observed_at<=?').all(symbol,...epochs,now):[],available=new Set(metadata.map(r=>Number(r.source_epoch_ms))),missingWarmupStarts=coreStarts.filter(t=>!available.has(t)),missingVolumeStarts=volumeStarts.filter(t=>!available.has(t));
+   if(coreStarts.length!==cfg.emaHistory.minimumBars||previous.length!==20||missingWarmupStarts.length||missingVolumeStarts.length){
+    if(now-end<=60000)continue;
+    insert.run(cfg.id,session,symbol,start,now,JSON.stringify({candidate:null,reason:'ema_core_warmup_or_volume_missing',observedAt:now,signalStart:start,setup:cfg.setup,emaHistoryPolicy:cfg.emaHistory,requiredWarmupBars:cfg.emaHistory.minimumBars,availableWarmupBars:coreStarts.length-missingWarmupStarts.length,missingWarmupStarts,missingVolumeStarts}));continue;
+   }
+  }
   // Fail closed cheaply before reconstructing large baseline batches. Missing tails
   // cannot be silently treated as a no-signal or filled with invented EMA inputs.
-  if(bySession){
+  if(bySession&&!cfg.emaHistory){
    const metadata=previous.length?candleDb.prepare('SELECT session,source_epoch_ms FROM candles WHERE symbol=? AND session IN ('+previous.map(()=>'?').join(',')+') AND first_observed_at<=? ORDER BY source_epoch_ms').all(symbol,...previous,now):[];
    const counts=previous.map(date=>{const rows=metadata.filter(r=>r.session===date);return {session:date,bars:rows.length,complete:rows.length===SESSION_BARS&&rows.every((r,i)=>Number(r.source_epoch_ms)===at(date,'09:15')+i*FIVE)};});
    if(previous.length!==20||counts.some(c=>!c.complete)){
@@ -48,17 +57,17 @@ export function middayDecisions(dir:string,store:StrategyLabStore,cfg:LabStrateg
    const key=String(row.session)+'/'+String(row.security_id)+'/'+observedAt;if(!batchCache.has(key)){const batch=candleDb.prepare('SELECT body FROM candle_batches WHERE session=? AND security_id=? AND observed_at=?').get(row.session!,row.security_id!,observedAt);batchCache.set(key,batch?JSON.parse(String(batch.body)):null);}const provenance=batchCache.get(key);
    history.push({candle,observedAt,sourceTime:candle.start+FIVE,source:provenance?.source??'unavailable',issues:provenance?(provenance.missing??[]).filter((v:string)=>v!=='historical_volume_missing'):['baseline_batch_provenance_unavailable']});
   };
-  if(bySession){if(previous.length)for(const row of candleDb.prepare('SELECT * FROM candles WHERE symbol=? AND session IN ('+previous.map(()=>'?').join(',')+') AND first_observed_at<=?').all(symbol,...previous,now))reconstruct(row);}
+  if(bySession&&!cfg.emaHistory){if(previous.length)for(const row of candleDb.prepare('SELECT * FROM candles WHERE symbol=? AND session IN ('+previous.map(()=>'?').join(',')+') AND first_observed_at<=?').all(symbol,...previous,now))reconstruct(row);}
   else if(epochs.length)for(const row of candleDb.prepare('SELECT * FROM candles WHERE symbol=? AND source_epoch_ms IN ('+epochs.map(()=>'?').join(',')+') AND first_observed_at<=?').all(symbol,...epochs,now))reconstruct(row);
   const latest=current.find(o=>o.candle.start===start),bad=(o:Observation)=>!validCandle(o.candle)||o.candle.volume===null||o.issues.length>0||o.sourceTime>o.observedAt||o.observedAt>now;
   let reason='no_qualifying_breakout';let candidate:Candidate|null=null;
   if(!latest){if(now-end<=60000)continue;reason='completed_observation_missing_before_deadline';}
   else if(now-end>60000||latest.observedAt-end>60000)reason='completed_observation_too_late';
-  else if(current.length!==(start-at(session,'09:15'))/FIVE+1||history.length!==previous.length*slotsPerDay||previous.length!==20){if(now-end<=60000)continue;reason='missing_prefix_or_prior20_baseline';}
+  else if(current.length!==(start-at(session,'09:15'))/FIVE+1||history.length!==(cfg.emaHistory?epochs.length:previous.length*slotsPerDay)||previous.length!==20){if(now-end<=60000)continue;reason='missing_prefix_or_prior20_baseline';}
   else if(current.some(bad)||history.some(bad))reason='invalid_observation_or_baseline';
   else{const t=new Date(start+19800000).toISOString().slice(11,16),e=new Date(end+19800000).toISOString().slice(11,16);candidate=firstStrategyCandidate(cfg,symbol,session,current.map(o=>o.candle),history.map(o=>o.candle),previous,0,{start:t,end:e});
    if(candidate){candidate={...candidate,id:`${cfg.id}/${session}/${symbol}/${start}`,decidedAt:now,source:'Immutable paper observations and as-of baseline snapshot; actual midday engine decision time'};reason='research_signal';}}
-  const evidence={candidate,reason,observedAt:now,signalStart:start,latestObservation:latest??null,openingObservations:current.filter(o=>o.candle.start<at(session,'09:30')),prefixObservations:current,baselineObservations:history,window:cfg.signalWindow,setup:cfg.setup??'opening-range'};
+  const evidence={candidate,reason,observedAt:now,signalStart:start,latestObservation:latest??null,openingObservations:current.filter(o=>o.candle.start<at(session,'09:30')),prefixObservations:current,baselineObservations:history,window:cfg.signalWindow,setup:cfg.setup??'opening-range',emaHistoryPolicy:cfg.emaHistory??null};
   insert.run(cfg.id,session,symbol,start,now,JSON.stringify(evidence));if(candidate)out.push(candidate);
  }}finally{for(const db of dbs)db.close();candleDb.close();}return out;
 }

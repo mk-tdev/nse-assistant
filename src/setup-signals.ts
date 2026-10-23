@@ -1,6 +1,7 @@
 import {at,FIVE,day,minute,validCandle,type Candle} from './model.js';
 import {vwap,relativeVolume} from './analysis.js';
 import {ema} from './ema.js';
+import {emaWarmup} from './ema-history.js';
 import {firstOrbCandidate,type Candidate} from './strategy-selection.js';
 import type {LabStrategy} from './strategy-registry.js';
 export const SESSION_BARS=(at('2026-01-01','15:30')-at('2026-01-01','09:15'))/FIVE;
@@ -11,12 +12,13 @@ export function firstStrategyCandidate(cfg:LabStrategy,symbol:string,session:str
  const cs=bars.filter(validCandle).sort((a,b)=>a.start-b.start),past=new Map<number,Candle[]>();
  for(const b of history){const t=minute(b.start);if(!past.has(t))past.set(t,[]);past.get(t)!.push(b);}
  // EMA warm-up needs a gap-free chronological series, not same-slot samples: every prior session must be a complete day.
- const priorDaySeries=cfg.setup!=='ema-pullback'?[]:[...history].filter(validCandle).sort((a,b)=>a.start-b.start);
- const priorDaysComplete=cfg.setup!=='ema-pullback'||previous.every(d=>{
+ const warmup=cfg.emaHistory?emaWarmup(history,previous,cfg.emaHistory):null;
+ const priorDaySeries=cfg.setup!=='ema-pullback'?[]:warmup?warmup.bars:[...history].filter(validCandle).sort((a,b)=>a.start-b.start);
+ const priorDaysComplete=cfg.setup!=='ema-pullback'||(warmup?warmup.ready:previous.every(d=>{
   const dayBars=priorDaySeries.filter(b=>day(b.start)===d);
   if(dayBars.length!==SESSION_BARS)return false;
   return dayBars.every((b,j)=>b.start===at(d,'09:15')+j*FIVE);
- });
+ }));
  for(let i=0;i<cs.length;i++){
   const c=cs[i]!;if(c.start<at(session,window.start)||c.start+FIVE>at(session,window.end))continue;
   const prefix=cs.slice(0,i+1).filter(b=>b.start>=at(session,'09:15'));
@@ -70,7 +72,7 @@ export function firstStrategyCandidate(cfg:LabStrategy,symbol:string,session:str
    const relative=relativeVolume(c,past.get(minute(c.start))??[],previous);
    if(relative.missing||relative.ratio===null)continue;
    rv=relative.ratio;
-   evidence={setup:cfg.setup,warmupBars:k,trendBar:series[found.trendIdx],pullbackBars:found.pullback,ema8:e8[k],ema21:e21[k],precedingBar:prevBar,note:'Core trend/pullback/reclaim rule; volume is recorded as evidence only and is not a gate for this variant.'};
+   evidence={setup:cfg.setup,emaHistoryPolicy:cfg.emaHistory??'strict-prior20-full-session-v1',priorWarmupBars:priorDaySeries.length,seedStart:priorDaySeries[0]?.start,seedEnd:priorDaySeries.at(-1)?.start,warmupBars:k,trendBar:series[found.trendIdx],pullbackBars:found.pullback,ema8:e8[k],ema21:e21[k],precedingBar:prevBar,note:'Core trend/pullback/reclaim rule; volume is recorded as evidence only and is not a gate for this variant.'};
   }
   return {id:`${cfg.id}/${session}/${symbol}/${c.start}`,symbol,session,signalStart:c.start,decidedAt:c.start+FIVE+delayMs,signalClose:c.close,rangeHigh:high,stop,vwap:vw,relativeVolume:rv,extension:(c.close-high)/(high-stop),setupEvidence:evidence,source:'Historical final bars; modeled end+10s availability; setup defined on completed prefix only'};
  }

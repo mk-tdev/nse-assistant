@@ -113,7 +113,7 @@ bar end+10s, strictly later bar-open entry within 330s, stop-first ambiguous bar
 and unknown outcomes for missing price intervals. It is in-sample exploration,
 not evidence of a profitable live strategy. New experiments remain disabled until
 that comparison is reviewed, then may be enabled for prospective paper recording.
-8/21 EMA pullback is research only and is not registered or enabled.
+At that point 8/21 EMA pullback was research only; subsequent implementation and the versioned history fix are documented below.
 
 AWS comparison completed before activation: run
 `708ea2e0-f735-4355-aa3b-23fc84121cfe`, OHLC proxy, 21–23 October 2026.
@@ -159,3 +159,29 @@ already known incomplete. No missing candle is interpolated. Existing strategy
 parameters and controls remain unchanged. The operator watchlist now chooses the
 newest pending submission across the whole queue, including more than 20 queued
 requests, with older pending submissions explicitly superseded.
+
+## EMA history v2: explicit core-session series
+
+`ema-core-nifty-10-v2` is a separate Nifty 50 fixed-10-share paper experiment.
+It preserves the strict full-session v1 account and every other baseline. The
+versioned configuration declares a 09:15–15:15 IST calculation window on every
+session. Only starts 09:15 through 15:10 are eligible for this EMA. The absent
+15:15/15:20/15:25 starts stay missing in the raw recorder and full-session quality
+reports. They are deliberately outside this model, not invented or treated as
+exchange holidays. This EMA can differ from a normal full-session chart EMA.
+
+Seed each session from the last **200 scheduled core-window slots** of the
+previous three exchange-calendar sessions, followed by the current completed
+prefix. SMA initialization of periods 8/21 is fixed at that seed start. Every one
+of those 200 slots must contain exactly one real valid OHLCV bar; duplicate,
+invalid, missing or unavailable-as-of-decision observations block the setup.
+Unused earlier bars cannot affect this fixed seed. Current-session gaps also
+block. Prior-20 same-slot volume evidence is still required; no minimum RVOL
+ratio is introduced. Signals remain 09:45–14:30 IST, with approximate VWAP,
+pullback/reclaim, stop, 2R target, future-quote entry, costs and 15:10 exit unchanged.
+
+Historical runs use the identical seed/window policy with final-bar OHLC proxy
+execution, explicitly labelled in-sample. Live decisions reconstruct only versions
+observed by the actual decision time and journal the seed policy and source bars.
+Quote replay without original v2 decisions is blocked; historical modeled signals
+are never installed as live trades. Activation follows the requested backtest.

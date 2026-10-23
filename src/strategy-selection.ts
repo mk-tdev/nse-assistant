@@ -1,3 +1,4 @@
+import {emaWarmup,type EmaHistoryPolicy} from './ema-history.js';
 import {at,FIVE,day,minute,validCandle,type Candle} from './model.js';
 import {vwap,relativeVolume} from './analysis.js';
 import type {LabStrategy} from './strategy-registry.js';
@@ -30,11 +31,11 @@ export function openingSelection(session:string,symbols:string[],current:Map<str
  ranked.forEach((v,i)=>{v.rank=i+1;v.eligible=i<cfg.topN;v.reason=v.eligible?'selected_at_opening_cutoff':'outside_top_10';});return vals;
 }
 /** Qualification coverage is separate from trade outcomes: missing history is not a no-signal. */
-export function qualificationCoverage(session:string,symbols:string[],current:Map<string,Candle[]>,history:Map<string,Candle[]>,previous:string[],window={start:'09:30',end:'11:00'},baselineSlots=1,requireCompleteHistory=false){
+export function qualificationCoverage(session:string,symbols:string[],current:Map<string,Candle[]>,history:Map<string,Candle[]>,previous:string[],window={start:'09:30',end:'11:00'},baselineSlots=1,requireCompleteHistory=false,emaPolicy?:EmaHistoryPolicy){
  let usableSlots=0,missingBaselineSlots=0,missingPrefixSlots=0;const unavailable:string[]=[];
- for(const symbol of symbols){const currentValid=new Set((current.get(symbol)??[]).filter(c=>validCandle(c)&&c.volume!==null).map(c=>c.start)),pastValid=new Set((history.get(symbol)??[]).filter(c=>validCandle(c)&&c.volume!==null).map(c=>day(c.start)+'/'+minute(c.start)));let usable=0;const completeHistory=!requireCompleteHistory||previous.length===20&&previous.every(date=>Array.from({length:75},(_,i)=>555+i*5).every(slot=>pastValid.has(date+'/'+slot)));
+ for(const symbol of symbols){const currentValid=new Set((current.get(symbol)??[]).filter(c=>validCandle(c)&&c.volume!==null).map(c=>c.start)),pastValid=new Set((history.get(symbol)??[]).filter(c=>validCandle(c)&&c.volume!==null).map(c=>day(c.start)+'/'+minute(c.start)));let usable=0;const completeHistory=emaPolicy?emaWarmup(history.get(symbol)??[],previous,emaPolicy).ready:!requireCompleteHistory||previous.length===20&&previous.every(date=>Array.from({length:75},(_,i)=>555+i*5).every(slot=>pastValid.has(date+'/'+slot)));
   for(let t=at(session,window.start);t+FIVE<=at(session,window.end);t+=FIVE){let prefix=true;for(let p=at(session,'09:15');p<=t;p+=FIVE)if(!currentValid.has(p)){prefix=false;break;}
    const baseline=completeHistory&&previous.length===20&&previous.every(date=>Array.from({length:baselineSlots},(_,i)=>minute(t-i*FIVE)).every(slot=>pastValid.has(date+'/'+slot)));if(!prefix)missingPrefixSlots++;if(!baseline)missingBaselineSlots++;if(prefix&&baseline){usable++;usableSlots++;}}
   if(!usable)unavailable.push(symbol);
- }return {status:usableSlots===0?'blocked':missingBaselineSlots||missingPrefixSlots?'partial':'complete',usableSlots,missingBaselineSlots,missingPrefixSlots,stocksWithoutUsableSlot:unavailable,reason:usableSlots===0?(requireCompleteHistory?'EMA evaluation blocked: complete 75-bar sessions across prior20 history and a valid current prefix are required':'No signal slots have a complete current prefix and prior-20 same-slot volume baseline'):missingBaselineSlots||missingPrefixSlots?'Some signal slots lack required price/volume history':null};
+ }return {status:usableSlots===0?'blocked':missingBaselineSlots||missingPrefixSlots?'partial':'complete',usableSlots,missingBaselineSlots,missingPrefixSlots,stocksWithoutUsableSlot:unavailable,reason:usableSlots===0?(emaPolicy?'EMA evaluation blocked: 200 real core-session warm-up bars, prior20 same-slot volume and a valid current prefix are required':requireCompleteHistory?'EMA evaluation blocked: complete 75-bar sessions across prior20 history and a valid current prefix are required':'No signal slots have a complete current prefix and prior-20 same-slot volume baseline'):missingBaselineSlots||missingPrefixSlots?'Some signal slots lack required price/volume history':null};
 }
