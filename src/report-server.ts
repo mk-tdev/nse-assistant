@@ -4,7 +4,7 @@ import {join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {labView,labRun} from './strategy-lab-view.js';
 import {backtestSchema,toggleSchema} from './strategy-backtest.js';
-import {dashboardHtml as page,dashboardCss,dashboardJs as script,backtestHtml,backtestJs} from './dashboard-assets.js';
+import {dashboardHtml as page,dashboardCss,dashboardJs as script,backtestHtml,backtestJs,controlsJs,review20261023Html} from './dashboard-assets.js';
 import {randomBytes,timingSafeEqual} from 'node:crypto';
 import {ControlStore,exitSchema,entrySchema} from './paper-control-store.js';
 import {exitTargets} from './paper-console.js';
@@ -38,6 +38,8 @@ export function reportServer(dir:string,options:{controlDir?:string;origin?:stri
    if(path==='/api/control-session'){let healthy=false;if(control)try{const h=JSON.parse(await readFile(join(options.controlDir!,'health.json'),'utf8'));healthy=Date.now()-Date.parse(h.observedAt)<=20000;}catch{}json({enabled:Boolean(control),healthy,csrf:control?csrf:null,paperOnly:true});return;}
    if(path==='/api/paper/command'&&control){const id=url.searchParams.get('id')??'';if(!/^[a-f0-9-]{36}$/.test(id)){res.writeHead(400);res.end();return;}const result=control.get(id);if(!result){res.writeHead(404);res.end();return;}json(result);return;}
    if(path==='/backtests'){res.setHeader('Content-Type','text/html; charset=utf-8');res.end(backtestHtml);return;}
+   if(path==='/reviews/2026-10-23'){res.setHeader('Content-Type','text/html; charset=utf-8');res.end(review20261023Html);return;}
+   if(path==='/controls.js'){res.setHeader('Content-Type','application/javascript; charset=utf-8');res.end(controlsJs);return;}
    if(path==='/backtest.js'){res.setHeader('Content-Type','application/javascript; charset=utf-8');res.end(backtestJs);return;}
    if(path==='/dashboard.css'){res.setHeader('Content-Type','text/css; charset=utf-8');res.end(dashboardCss);return;}
    if(path==='/api/dashboard'){const session=url.searchParams.get('session');if(session&&!/^\d{4}-\d{2}-\d{2}$/.test(session)){res.writeHead(400);res.end();return;}const value=await dashboardData(dir,session??undefined);if(!value){res.writeHead(404);res.end();return;}if(options.labDir){const lab=await labView(options.labDir,value.selectedSession);(value as any).strategyLab=lab;if(lab.live?.cohorts&&value.report.paper?.research){const paper=value.report.paper,fullRows=paper.research.cohorts.find((c:any)=>c.name==='range-hold')?.scanner?.rows??paper.scanner?.rows??[];for(const c of lab.live.cohorts){const scope=c.configuration?.universe,source=scope==='nifty50'?paper.scanner?.rows??[]:scope==='screeners'?paper.research.cohorts.find((v:any)=>v.name==='screener-orb')?.scanner?.rows??[]:fullRows;c.scanner={...c.scanner,expectedStocks:source.length,rows:source.map((r:any)=>{const position=c.states.find((p:any)=>p.symbol===r.symbol),rank=lab.live.selection?.find((v:any)=>v.symbol===r.symbol);return {...r,status:position?.status??(scope==='stocks-in-play'&&rank&&!rank.eligible?'not-selected':value.report.phase==='after_close'?'no-entry':'waiting-signal'),reasons:position?.reasons??[scope==='stocks-in-play'&&rank&&!rank.eligible?rank.reason:'No immutable qualifying candidate recorded'],signalAt:position?.signalAt??null,entry:position?.entry??null,stop:position?.stop??null,target:position?.target??null,quantity:position?.quantity??(c.configuration?.sizing==='fixed-10'?10:null),unknownOutcome:position?.unknownOutcome??false};})};paper.research.cohorts.push(c);}}}json(await enrichPortfolio(dir,value,control));return;}

@@ -58,3 +58,9 @@ API additions reuse HTTPS authentication, exact Origin, JSON content type, per-p
 - `GET /backtests?run=UUID`: separate historical day/strategy/trade/chart viewer and export.
 
 Quote archive growth and the existing large recorder poll history need retention planning as the sample grows. Do not delete trade audits, frozen selections or budget databases to make room. No cleanup/retention policy is introduced by this change.
+
+## Dashboard workspaces and archived chart access
+
+The authenticated app exposes `/` for charts and selected-strategy trades, `/strategies` for management and backtests, `/commodities` for manual MCX paper activity, and `/operations` for agent and data quality. All visible select controls are custom button/listbox widgets, backed by hidden form values. SVG sidebar icons use fixed aligned slots. `?session=YYYY-MM-DD&strategy=ID&symbol=SYMBOL` opens a specific chart. The dated review `/reviews/2026-10-23` separates actual ONGC paper observations from exploratory later-breakout OHLC scenarios.
+
+SQLite WAL mode needs reader metadata even after the collector closes. AWS runs `deploy/lightsail/prepare-report-readers.py` through an `nse-recorder.service` ExecStopPost drop-in, installed at `/opt/nse-assistant/prepare-report-readers.py`. It opens candle/paper databases in read-only mode to initialize SQLite metadata and gives generated metadata the database owner's permissions. It does not update price or trade tables. The report container keeps its source bind mount read-only.
