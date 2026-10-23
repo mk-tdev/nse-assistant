@@ -185,3 +185,21 @@ execution, explicitly labelled in-sample. Live decisions reconstruct only versio
 observed by the actual decision time and journal the seed policy and source bars.
 Quote replay without original v2 decisions is blocked; historical modeled signals
 are never installed as live trades. Activation follows the requested backtest.
+
+EMA v2 AWS validation (before activation), run
+`745f2d92-c539-473a-8ca2-6833f5e3ed64`: 21 October blocked by prior-20 volume
+history; 22 October complete qualification across all 50 Nifty stocks, 28 paper
+entries, 3 wins/25 losses, net −₹2,237.18; 23 October complete qualification,
+15 entries, 4 wins/11 losses, net −₹885.55. Both complete dates had zero unknown
+entered outcomes in the OHLC proxy. Estimated charges and slippage included.
+This is an in-sample exploration and does not establish a profitable strategy.
+The raw session tails remain absent and flagged; qualification is complete only
+under the declared core-session EMA policy.
+
+Read-only preflight for 26 October found 200 required real warm-up bars and the
+prior-20 same-slot volume evidence available for 50/50 Nifty stocks. An isolated
+50-stock rehearsal using original 23 October observations completed in 2.24s with
+no future observations or duplicate decisions. Three real qualifying candidates
+reproduced prospectively; removing a required warm-up candle blocked each one.
+Readiness still depends on valid Dhan credentials and timely observations in the
+next session. No historical modeled trades were inserted into the live ledger.
