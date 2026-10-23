@@ -149,3 +149,13 @@ OHLC-proxy history before being enabled. It is still recommended to run the dash
 OHLC-proxy and quote-replay backtests once enough real sessions exist and record the
 result here, the same process used for consolidation and retest, since "paper-only"
 protects capital, not research validity.
+
+Deployment review follow-up: EMA qualification now explicitly reports blocked
+when its required twenty complete 75-bar prior sessions are unavailable. Existing
+72-bar REST histories do not satisfy this condition; zero trades in that case are
+not a valid zero-return backtest. The live decision journal records the per-day
+counts and avoids reconstructing large baseline batches when the history is
+already known incomplete. No missing candle is interpolated. Existing strategy
+parameters and controls remain unchanged. The operator watchlist now chooses the
+newest pending submission across the whole queue, including more than 20 queued
+requests, with older pending submissions explicitly superseded.

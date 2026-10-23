@@ -14,10 +14,14 @@ function takeCustomRequest(controlDir?:string){
  if(!controlDir)return null;
  const queue=new ControlStore(controlDir);
  try{
-  const rows=queue.pending(['custom-watchlist-update']);if(!rows.length)return null;
-  const latest=rows[rows.length-1]! as {id:string;body:string};
-  for(const row of rows.slice(0,-1) as {id:string}[])queue.finish(row.id,{status:'superseded_by_newer_request'});
-  return {id:latest.id,input:customWatchlistSchema.parse(JSON.parse(latest.body))};
+  queue.db.exec('BEGIN IMMEDIATE');
+  try{
+   const latest=queue.db.prepare("SELECT id,body FROM commands WHERE kind='custom-watchlist-update' AND status='pending' ORDER BY created_at DESC,rowid DESC LIMIT 1").get();
+   if(!latest){queue.db.exec('COMMIT');return null;}
+   const input=customWatchlistSchema.parse(JSON.parse(String(latest.body)));
+   queue.db.prepare("UPDATE commands SET status='completed',result=? WHERE kind='custom-watchlist-update' AND status='pending' AND id<>?").run(JSON.stringify({status:'superseded_by_newer_request'}),String(latest.id));
+   queue.db.exec('COMMIT');return {id:String(latest.id),input};
+  }catch(e){queue.db.exec('ROLLBACK');throw e;}
  }finally{queue.close();}
 }
 export async function prepare(date:string,dir:string,controlDir?:string,

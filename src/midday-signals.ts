@@ -1,7 +1,7 @@
 import {DatabaseSync} from 'node:sqlite';
 import {existsSync} from 'node:fs';
 import {join} from 'node:path';
-import {at,FIVE,validCandle} from './model.js';
+import {at,FIVE,day,validCandle} from './model.js';
 import type {Candidate} from './strategy-selection.js';
 import {firstStrategyCandidate,SESSION_BARS} from './setup-signals.js';
 import type {StrategyLabStore} from './strategy-lab-store.js';
@@ -29,12 +29,23 @@ export function middayDecisions(dir:string,store:StrategyLabStore,cfg:LabStrateg
   // fetches every candle of each prior session rather than a handful of matching times.
   const bySession=cfg.setup==='ema-pullback',slotsPerDay=bySession?SESSION_BARS:cfg.setup==='breakout-retest'?4:1;
   const slots=bySession?[]:Array.from({length:slotsPerDay},(_,i)=>new Date(start-i*FIVE+19800000).toISOString().slice(11,16)),epochs=bySession?[]:previous.flatMap(date=>slots.map(slot=>at(date,slot)));history=[];
+  // Fail closed cheaply before reconstructing large baseline batches. Missing tails
+  // cannot be silently treated as a no-signal or filled with invented EMA inputs.
+  if(bySession){
+   const metadata=previous.length?candleDb.prepare('SELECT session,source_epoch_ms FROM candles WHERE symbol=? AND session IN ('+previous.map(()=>'?').join(',')+') AND first_observed_at<=? ORDER BY source_epoch_ms').all(symbol,...previous,now):[];
+   const counts=previous.map(date=>{const rows=metadata.filter(r=>r.session===date);return {session:date,bars:rows.length,complete:rows.length===SESSION_BARS&&rows.every((r,i)=>Number(r.source_epoch_ms)===at(date,'09:15')+i*FIVE)};});
+   if(previous.length!==20||counts.some(c=>!c.complete)){
+    if(now-end<=60000)continue;
+    insert.run(cfg.id,session,symbol,start,now,JSON.stringify({candidate:null,reason:'ema_prior20_full_session_history_missing',observedAt:now,signalStart:start,setup:cfg.setup,requiredBarsPerSession:SESSION_BARS,historyCoverage:counts}));continue;
+   }
+  }
+  const batchCache=new Map<string,any>();
   const reconstruct=(row:any)=>{
    const revision=candleDb.prepare('SELECT previous_json FROM revisions WHERE session=? AND security_id=? AND source_epoch_ms=? AND observed_at>? ORDER BY observed_at,id LIMIT 1').get(row.session!,row.security_id!,row.source_epoch_ms!,now);
    const last=candleDb.prepare('SELECT MAX(observed_at) t FROM revisions WHERE session=? AND security_id=? AND source_epoch_ms=? AND observed_at<=?').get(row.session!,row.security_id!,row.source_epoch_ms!,now);
    const observedAt=Number(row.last_observed_at)<=now?Number(row.last_observed_at):Number(last?.t??row.first_observed_at);
    const candle=revision?JSON.parse(String(revision.previous_json)):{start:Number(row.source_epoch_ms),open:Number(row.open),high:Number(row.high),low:Number(row.low),close:Number(row.close),volume:row.volume===null?null:Number(row.volume)};
-   const batch=candleDb.prepare('SELECT body FROM candle_batches WHERE session=? AND security_id=? AND observed_at=?').get(row.session!,row.security_id!,observedAt),provenance=batch?JSON.parse(String(batch.body)):null;
+   const key=String(row.session)+'/'+String(row.security_id)+'/'+observedAt;if(!batchCache.has(key)){const batch=candleDb.prepare('SELECT body FROM candle_batches WHERE session=? AND security_id=? AND observed_at=?').get(row.session!,row.security_id!,observedAt);batchCache.set(key,batch?JSON.parse(String(batch.body)):null);}const provenance=batchCache.get(key);
    history.push({candle,observedAt,sourceTime:candle.start+FIVE,source:provenance?.source??'unavailable',issues:provenance?(provenance.missing??[]).filter((v:string)=>v!=='historical_volume_missing'):['baseline_batch_provenance_unavailable']});
   };
   if(bySession){if(previous.length)for(const row of candleDb.prepare('SELECT * FROM candles WHERE symbol=? AND session IN ('+previous.map(()=>'?').join(',')+') AND first_observed_at<=?').all(symbol,...previous,now))reconstruct(row);}
