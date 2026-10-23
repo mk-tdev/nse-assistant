@@ -6,7 +6,7 @@ import {labView,labRun} from './strategy-lab-view.js';
 import {backtestSchema,toggleSchema} from './strategy-backtest.js';
 import {dashboardHtml as page,dashboardCss,dashboardJs as script,backtestHtml,backtestJs,controlsJs,review20261023Html} from './dashboard-assets.js';
 import {randomBytes,timingSafeEqual} from 'node:crypto';
-import {ControlStore,exitSchema,entrySchema} from './paper-control-store.js';
+import {ControlStore,exitSchema,entrySchema,customWatchlistSchema} from './paper-control-store.js';
 import {exitTargets} from './paper-console.js';
 import {enrichPortfolio} from './dashboard-portfolio.js';
 import {day} from './model.js';
@@ -20,10 +20,13 @@ export function reportServer(dir:string,options:{controlDir?:string;origin?:stri
   try{
    const url=new URL(req.url??'/', 'http://localhost'),path=url.pathname;
    const json=(value:unknown)=>{res.setHeader('Content-Type','application/json');res.end(JSON.stringify(value));};
-   if(req.method==='POST'&&control&&['/api/paper/exit','/api/paper/entry','/api/lab/backtest','/api/lab/toggle'].includes(path)){
+   if(req.method==='POST'&&control&&['/api/paper/exit','/api/paper/entry','/api/lab/backtest','/api/lab/toggle','/api/watchlist/custom'].includes(path)){
     const supplied=Buffer.from(String(req.headers['x-paper-csrf']??'')),expected=Buffer.from(csrf);
     if(req.headers.origin!==options.origin||supplied.length!==expected.length||!timingSafeEqual(supplied,expected)||req.headers['content-type']!=='application/json'){res.statusCode=403;json({error:'PAPER_CONTROL_ORIGIN_OR_CSRF_REJECTED'});return;}
     let body='';for await(const chunk of req){body+=String(chunk);if(Buffer.byteLength(body)>4096){res.writeHead(413);res.end();return;}}
+    // A custom-watchlist submission is read by the next pre-session freeze, a one-shot job, not the live worker;
+    // it must queue even when the recorder/paper worker is offline (e.g. the evening before or before 09:05 IST).
+    if(path==='/api/watchlist/custom'){try{const input=customWatchlistSchema.parse(JSON.parse(body));res.statusCode=202;json(control.enqueue(input.requestId,'custom-watchlist-update',input));}catch{res.statusCode=400;json({error:'Invalid custom watchlist request'});}return;}
     try{
      const health=JSON.parse(await readFile(join(options.controlDir!,'health.json'),'utf8'));if(Date.now()-Date.parse(health.observedAt)>20000)throw Error('PAPER_WORKER_OFFLINE');
      const raw=JSON.parse(body);let command;
@@ -36,6 +39,7 @@ export function reportServer(dir:string,options:{controlDir?:string;origin?:stri
    }
    if(req.method!=='GET'){res.writeHead(405);res.end();return;}
    if(path==='/api/control-session'){let healthy=false;if(control)try{const h=JSON.parse(await readFile(join(options.controlDir!,'health.json'),'utf8'));healthy=Date.now()-Date.parse(h.observedAt)<=20000;}catch{}json({enabled:Boolean(control),healthy,csrf:control?csrf:null,paperOnly:true});return;}
+   if(path==='/api/watchlist/custom'){if(!control){json({enabled:false,pending:null,lastResult:null});return;}const latest=control.latest('custom-watchlist-update');json({enabled:true,pending:latest&&latest.status==='pending'?{requestId:latest.id,symbols:latest.body.symbols,submittedAt:new Date(latest.created_at).toISOString()}:null,lastResult:latest&&latest.status==='completed'&&latest.result?.symbols?{requestId:latest.id,symbols:latest.result.symbols}:null,policy:'Takes effect from the next scheduled pre-session freeze (08:50 IST), not the running session; frozen symbols then join every universe:\'all\' strategy alongside Nifty 50 and the auto-screened list.'});return;}
    if(path==='/api/paper/command'&&control){const id=url.searchParams.get('id')??'';if(!/^[a-f0-9-]{36}$/.test(id)){res.writeHead(400);res.end();return;}const result=control.get(id);if(!result){res.writeHead(404);res.end();return;}json(result);return;}
    if(path==='/backtests'){res.setHeader('Content-Type','text/html; charset=utf-8');res.end(backtestHtml);return;}
    if(path==='/reviews/2026-10-23'){res.setHeader('Content-Type','text/html; charset=utf-8');res.end(review20261023Html);return;}

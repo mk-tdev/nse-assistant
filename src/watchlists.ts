@@ -4,8 +4,8 @@ import {z} from 'zod';
 import {at,validDate,type Instrument} from './model.js';
 export const SCREEN_URLS={chartink:'https://chartink.com/screener/short-term-breakouts',screener:'https://www.screener.in/screens/803777/near-breakout-stocks-in-uptrend/'} as const;
 export const hash=(v:unknown)=>createHash('sha256').update(JSON.stringify(v)).digest('hex');
-const candidate=z.object({symbol:z.string().regex(/^[A-Z0-9&-]+$/),source:z.enum(['chartink','screener']),sourceUrl:z.string().url()});
-const schema=z.object({sessionDate:z.string().refine(validDate),frozenAt:z.string().datetime({offset:true}),candidates:z.array(candidate).max(100),accepted:z.array(z.object({symbol:z.string(),securityId:z.string().regex(/^\d+$/),sources:z.array(z.enum(['chartink','screener'])),medianObservedTurnover:z.number(),medianObservedVolume:z.number()})).max(20),rejected:z.array(z.object({symbol:z.string(),reason:z.string()})),sources:z.array(z.object({source:z.string(),url:z.string(),fetchedAt:z.string(),status:z.string(),contentHash:z.string()})),policy:z.string(),snapshotHash:z.string()});
+const candidate=z.object({symbol:z.string().regex(/^[A-Z0-9&-]+$/),source:z.enum(['chartink','screener','custom']),sourceUrl:z.string().url()});
+const schema=z.object({sessionDate:z.string().refine(validDate),frozenAt:z.string().datetime({offset:true}),candidates:z.array(candidate).max(100),accepted:z.array(z.object({symbol:z.string(),securityId:z.string().regex(/^\d+$/),sources:z.array(z.enum(['chartink','screener','custom'])),medianObservedTurnover:z.number(),medianObservedVolume:z.number()})).max(20),rejected:z.array(z.object({symbol:z.string(),reason:z.string()})),sources:z.array(z.object({source:z.string(),url:z.string(),fetchedAt:z.string(),status:z.string(),contentHash:z.string()})),policy:z.string(),snapshotHash:z.string()});
 export type Watchlists=z.infer<typeof schema>;
 export async function loadWatchlists(date:string,items:Instrument[],path:string|undefined):Promise<{snapshot:Watchlists|null;instruments:Instrument[];error:string|null}>{
  if(!path)return {snapshot:null,instruments:[],error:null};

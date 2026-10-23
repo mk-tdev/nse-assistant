@@ -139,8 +139,13 @@ the same shared approximate-VWAP confirmation gate used by every setup in
 `setup-signals.ts`. Relative volume is recorded as evidence only, not a gate, for this
 variant; a volume-confirmed variant is a possible separate follow-up, not implemented.
 
-Registered **disabled**. It has not been backtested against real sessions: this change
-only adds the signal logic and unit tests against synthetic fixtures, not a result.
-Enable only after running the dashboard's OHLC-proxy and quote-replay backtests on AWS
-and recording the outcome here, the same process used for the consolidation and retest
-setups above.
+Registered **disabled** when first implemented; it has not been backtested against real
+recorded sessions, so there is still no result to cite, only the logic and its unit
+tests against synthetic fixtures. The user explicitly chose to enable it anyway on
+23 October 2026, reasoning that this entire deployment is paper-only (no broker orders
+exist here regardless of strategy), so an unvalidated signal carries no real-money risk,
+unlike the consolidation/retest setups above which were reviewed against two sessions'
+OHLC-proxy history before being enabled. It is still recommended to run the dashboard's
+OHLC-proxy and quote-replay backtests once enough real sessions exist and record the
+result here, the same process used for consolidation and retest, since "paper-only"
+protects capital, not research validity.

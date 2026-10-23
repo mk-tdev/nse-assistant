@@ -6,5 +6,5 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 TimeoutStartSec=480
-ExecStart=/usr/bin/flock -n /run/lock/nse-recorder-cloud.lock /usr/bin/docker run --rm --init --name nse-watchlists --read-only --cap-drop=ALL --security-opt=no-new-privileges --env-file /etc/nse-assistant/dhan.env --env-file /etc/nse-assistant/paper.env --env RECORDER_DATA_DIR=/data --mount type=bind,source=/var/lib/nse-recorder,target=/data nse-recorder:local node dist/prepare-watchlists.js
+ExecStart=/usr/bin/flock -n /run/lock/nse-recorder-cloud.lock /usr/bin/docker run --rm --init --name nse-watchlists --read-only --cap-drop=ALL --security-opt=no-new-privileges --env-file /etc/nse-assistant/dhan.env --env-file /etc/nse-assistant/paper.env --env RECORDER_DATA_DIR=/data --env PAPER_CONTROL_DIR=/controls --mount type=bind,source=/var/lib/nse-recorder,target=/data --mount type=bind,source=/var/lib/nse-paper-controls,target=/controls nse-recorder:local node dist/prepare-watchlists.js
 ExecStopPost=-/usr/bin/docker stop --timeout 15 nse-watchlists

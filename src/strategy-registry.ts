@@ -13,7 +13,7 @@ export const labStrategies:LabStrategy[]=[
  {...common,id:'midday-consolidation-10-v1',name:'Midday consolidation / fresh 30-minute box / 10 shares',enabled:false,universe:'all',maxExtension:null,sizing:'fixed-10',signalWindow:{start:'11:00',end:'14:00'},setup:'midday-consolidation'},
  {...common,id:'orb-retest-10-v1',name:'ORB breakout retest and hold / 10 shares',enabled:false,universe:'all',maxExtension:null,sizing:'fixed-10',signalWindow:{start:'09:35',end:'14:00'},setup:'breakout-retest'},
  {...common,id:'orb-extension-risk-v1',name:'Optional equal-risk ORB / extension cap',enabled:false,universe:'all',maxExtension:1,sizing:'equal-risk',maxOpenPositions:4},
- {...common,id:'ema-pullback-10-v1',name:'8/21 EMA pullback / core rule / 10 shares',enabled:false,universe:'all',maxExtension:null,sizing:'fixed-10',signalWindow:{start:'09:45',end:'14:30'},setup:'ema-pullback'},
+ {...common,id:'ema-pullback-10-v1',name:'8/21 EMA pullback / core rule / 10 shares',enabled:true,universe:'all',maxExtension:null,sizing:'fixed-10',signalWindow:{start:'09:45',end:'14:30'},setup:'ema-pullback'},
 ];
 export const strategyHash=(s:LabStrategy)=>{const {enabled,...parameters}=s;return createHash('sha256').update(JSON.stringify(parameters)).digest('hex');};
 export function strategyById(id:string){const s=labStrategies.find(s=>s.id===id);if(!s)throw Error('LAB_UNKNOWN_STRATEGY');return s;}

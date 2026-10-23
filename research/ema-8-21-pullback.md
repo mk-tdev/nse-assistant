@@ -17,10 +17,16 @@ needs a gap-free chronological series, not slot samples.
 It has **not** been backtested against real recorded sessions: this repository's local
 candle history (two symbols, a few sessions) is far short of the 20-session, 75-bar/day
 continuous history the rule requires, so no realistic OHLC-proxy or quote-replay result
-can be produced here. Before enabling it in the live strategy lab, run the dashboard's
-existing backtest tool (OHLC proxy, then quote replay) on AWS, exactly as was done for
-`midday-consolidation-10-v1` and `orb-retest-10-v1` in `docs/research-cohorts.md`, and
-record the result there. It stays disabled until that review happens.
+can be produced here.
+
+**Enabled on 23 October 2026** at the user's explicit instruction: since this deployment
+only ever runs paper strategies (no broker-order path exists), an unvalidated signal has
+no real-money consequence, so the usual "backtest before enabling" gate was waived here.
+Still run the dashboard's existing backtest tool (OHLC proxy, then quote replay) on AWS
+once real sessions accumulate, exactly as was done for `midday-consolidation-10-v1` and
+`orb-retest-10-v1` in `docs/research-cohorts.md`, and record the result there — paper-only
+removes the capital risk of an unproven rule, not the research question of whether it
+does anything useful.
 
 The shared session-approximate-VWAP gate that every other setup in `setup-signals.ts`
 goes through (confirmation close must exceed cumulative session VWAP) also applies here,
