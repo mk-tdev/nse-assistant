@@ -22,9 +22,9 @@ export async function positionsView(dir:string,labDir?:string,control?:ControlSt
   try{db=open(path);for(const row of db.prepare('SELECT body FROM paper_states').all())collect(id,JSON.parse(String(row.body)));}
   catch{errors.push(id+': ledger unavailable; positions may be missing');}finally{db?.close();}
  }
- let lab:DatabaseSync|undefined;
+ let lab:DatabaseSync|undefined,latestQuoteSession:string|null=null;
  try{
-  if(labDir&&existsSync(join(labDir,'strategy-lab.sqlite'))){lab=open(join(labDir,'strategy-lab.sqlite'));for(const row of lab.prepare("SELECT strategy_id,body FROM lab_positions WHERE run_id LIKE 'live/%'").all())collect(String(row.strategy_id),JSON.parse(String(row.body)));}
+  if(labDir&&existsSync(join(labDir,'strategy-lab.sqlite'))){lab=open(join(labDir,'strategy-lab.sqlite'));for(const row of lab.prepare("SELECT strategy_id,body FROM lab_positions WHERE run_id LIKE 'live/%'").all())collect(String(row.strategy_id),JSON.parse(String(row.body)));const last=lab.prepare('SELECT MAX(session) AS session FROM lab_quotes').get();latestQuoteSession=last?.session?String(last.session):null;}
  }catch{errors.push('Strategy lab ledger unavailable; positions may be missing');}
  try{for(const s of control?.positions()??[])collect('mcx-manual',s);}catch{errors.push('Manual paper ledger unavailable');}
  let quotes:any=null;try{quotes=JSON.parse(await readFile(join(dir,'quotes.json'),'utf8'));}catch{errors.push('Quote snapshots unavailable');}
@@ -35,7 +35,7 @@ export async function positionsView(dir:string,labDir?:string,control?:ControlSt
     const segment=s.assetClass==='MCX_FUTURE'?'MCX_COMM':'NSE_EQ',key=s.session+'/'+s.symbol+'/'+segment;
     const current=rows.find(q=>q.symbol===s.symbol&&(q.exchangeSegment??'NSE_EQ')===segment&&!q.error&&finite(q.lastPrice)&&q.lastPrice!>0);
     if(!quoteCache.has(key)){let archived:QuoteRow|null=null;
-     if(!current&&lab&&segment==='NSE_EQ')try{const r=lab.prepare('SELECT body FROM lab_quotes WHERE session=? AND symbol=? ORDER BY observed_at DESC LIMIT 1').get(s.session,s.symbol);if(r)archived=JSON.parse(String(r.body));}catch{}
+     if(!current&&lab&&segment==='NSE_EQ')try{for(const session of [...new Set([latestQuoteSession,s.session].filter(Boolean))]){const r=lab.prepare('SELECT body FROM lab_quotes WHERE session=? AND symbol=? ORDER BY observed_at DESC LIMIT 1').get(session!,s.symbol);if(r){archived=JSON.parse(String(r.body));break;}}}catch{}
      quoteCache.set(key,current??archived);
     }
     const q=quoteCache.get(key)??undefined,mark=freshQuote(q,now),quoteTime=quoteSourceTime(q?.rawSourceTimestamp??q?.sourceTimestamp),observed=q?Date.parse(q.observedAt):NaN;
