@@ -24,8 +24,10 @@ turnover and short exits are buy turnover. Unknown exit legs are omitted rather
 than invented. Open estimates include hypothetical exit fees only for fresh
 current-session marks; they do not add hypothetical exits to executed turnover.
 Old open positions, missing costs, stale marks and unknown paths prevent complete
-net reporting. Partial cards show valued-position P&L subtotals, and cost totals
-may include known charges on unresolved outcomes. This is labelled on the page.
+net reporting. Partial net deducts all known costs from valued gross, including costs of
+unresolved positions; missing P&L is excluded, not a known zero. The separate
+valued-position net and unresolved-cost contribution are exposed and labelled.
+The full outcome remains unknown until all positions are resolved.
 Net win/loss counts use valued closed positions after costs.
 
 The existing dashboard, positions view and trading workers are unchanged apart
