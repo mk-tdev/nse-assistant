@@ -56,7 +56,7 @@ export async function main(args=process.argv.slice(2)){
     try {
       const config=await loadPaperConfig();
       if(config){ledger=new PaperLedger(join(dir,'paper.sqlite'),config);await chmod(join(dir,'paper.sqlite'),0o600);worker=new PaperSessionWorker(baselineRecorder,ledger,mode==='mock'?()=>at(date,'10:00')+10000:Date.now);
-        if(process.env.PAPER_RESEARCH_ENABLED==='true')research=new ResearchCoordinator(store,provider,instruments,watched.instruments,date,mode,config,dir,watched.snapshot,watched.error,mode==='mock'?()=>at(date,'10:00')+10000:Date.now);}
+        if(process.env.PAPER_RESEARCH_ENABLED==='true')research=new ResearchCoordinator(store,provider,instruments,watched.instruments,date,mode,config,dir,watched.snapshot,watched.error,mode==='mock'?()=>at(date,'10:00')+10000:Date.now,Number(process.env.PAPER_SCREENER_QUANTITY??config.quantity));}
     }catch{if(!worker)paperSetupError='PAPER_CONFIGURATION_OR_STORAGE_FAILED';else paperSetupError='RESEARCH_CONFIGURATION_OR_STORAGE_FAILED';}
     while(!stopping){
       const cycleStarted=Date.now();

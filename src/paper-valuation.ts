@@ -1,6 +1,14 @@
 import {day,at} from './model.js';
 export type Mark={price:number;observedAt:number;sourceTime:number;source:string;policy:string};
 export type QuoteRow={symbol:string;securityId?:string;exchangeSegment?:string;lastPrice:number|null;observedAt:string;rawSourceTimestamp?:string|null;sourceTimestamp?:string|null;error?:string|null};
+/** Receipt continuity is distinct from last-trade freshness. Never authorizes a fill. */
+export function quoteReceipt(row:QuoteRow|undefined,now:number,after=0){
+ if(!row||row.error||!Number.isFinite(row.lastPrice)||row.lastPrice!<=0)return null;
+ const observedAt=Date.parse(row.observedAt),sourceTime=quoteSourceTime(row.rawSourceTimestamp??row.sourceTimestamp);
+ if(!Number.isFinite(observedAt)||sourceTime===null||sourceTime>now||sourceTime>observedAt+1000||observedAt>now||observedAt<after||now-observedAt>15000||day(sourceTime)!==day(now))return null;
+ const date=day(now),mcx=row.exchangeSegment==='MCX_COMM';if(now<at(date,mcx?'09:00':'09:15')||now>=at(date,mcx?'23:30':'15:30'))return null;
+ return {observedAt,sourceTime,tradeAgeMs:now-sourceTime};
+}
 export function quoteSourceTime(raw:string|null|undefined):number|null{
  if(!raw)return null;
  const m=/^(\d{2})\/(\d{2})\/(\d{4}) (\d{2}):(\d{2}):(\d{2})$/.exec(raw);

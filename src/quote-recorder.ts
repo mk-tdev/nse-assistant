@@ -1,8 +1,8 @@
-/** Separate read-only REST snapshot collector. Its output never drives paper fills. */
-import {readFile,writeFile,rename,mkdir} from 'node:fs/promises';
+/** Separate read-only REST snapshot collector. Snapshots drive research paper marks only; no broker order access. */
+import {readFile,writeFile,rename,mkdir,appendFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {pathToFileURL} from 'node:url';
-import {dashboardData} from './dashboard-data.js';
+import {quoteSourceTime} from './paper-valuation.js';
 import {at,day} from './model.js';
 import {z} from 'zod';
 import {fetchCommodityMaster,commodityCandles,commodityHours,type CommodityContract} from './commodities.js';
@@ -20,15 +20,24 @@ export async function collectQuotes(items:{symbol:string;securityId:string;excha
 export async function quoteLoop(env:NodeJS.ProcessEnv=process.env){
  const dir=env.RECORDER_DATA_DIR??'/data';await mkdir(dir,{recursive:true});let stopping=false;process.once('SIGTERM',()=>{stopping=true;});process.once('SIGINT',()=>{stopping=true;});
  const calendar=JSON.parse(await readFile(env.QUOTE_CALENDAR_PATH??new URL('../deploy/lightsail/calendar-2026.json',import.meta.url),'utf8')) as {sessions:string[];validFrom?:string;validThrough?:string};
- let contracts:CommodityContract[]=[],masterDate='',masterRetry=0,historyEnd=0,historyRetry=0;
+ let contracts:CommodityContract[]=[],masterDate='',masterRetry=0,historyEnd=0,historyRetry=0,lastReceiptAt:number|null=null;
+ let maintenance:Promise<void>|null=null;
  let commodityReport:Record<string,unknown>={contracts:[],candles:{},error:'MCX_AWAITING_MASTER'};
  while(!stopping){const now=Date.now(),sessionDate=day(now),during=calendar.sessions.includes(sessionDate)&&now>=at(sessionDate,'09:15')&&now<at(sessionDate,'15:30'),mcx=commodityHours(now);let output:Record<string,unknown>={sessionDate,checkedAt:new Date(now).toISOString(),source:'Dhan REST full-quote snapshots',intervalSeconds:5,sourceTimeZoneVerified:false,simulatedOnly:true,phase:during||mcx?'market_snapshots':'outside_scheduled_hours',rows:[],error:null};
-  if(masterDate!==sessionDate&&now>=masterRetry){masterRetry=now+300000;try{contracts=await fetchCommodityMaster(sessionDate);masterDate=sessionDate;historyEnd=0;commodityReport={sessionDate,contracts,candles:{},error:null,policy:'MCX manual paper only; 09:00–23:30 IST conservative weekday observation window. Holiday calendar unverified; stale quotes block fills. No margin estimate, delivery or automatic contract rollover.'};}catch{commodityReport.error='MCX_MASTER_UNAVAILABLE';}}
-  try{const d=during?await dashboardData(dir,sessionDate):null;const items=[...(d?.report.instruments??[]).map((i:{symbol:string;securityId:string})=>({...i,exchangeSegment:'NSE_EQ' as const})),...(mcx?contracts:[])];if(items.length){output.rows=await collectQuotes(items,env);output.observedAt=new Date().toISOString();}}catch(e){output.error=e instanceof Error&&/^(DHAN_HTTP_\d+|QUOTE_[A-Z_]+)$/.test(e.message)?e.message:'QUOTE_FETCH_OR_SCHEMA_ERROR';}
+  try{const d=during?JSON.parse(await readFile(join(dir,sessionDate+'.json'),'utf8')):null;const items=[...(d?.instruments??[]).map((i:{symbol:string;securityId:string})=>({...i,exchangeSegment:'NSE_EQ' as const})),...(mcx?contracts:[])];if(items.length){output.rows=await collectQuotes(items,env);output.observedAt=new Date().toISOString();}}catch(e){output.error=e instanceof Error&&/^(DHAN_HTTP_\d+|QUOTE_[A-Z_]+)$/.test(e.message)?e.message:'QUOTE_FETCH_OR_SCHEMA_ERROR';}
   const file=join(dir,'quotes.json');await writeFile(file+'.tmp',JSON.stringify(output)+'\n',{mode:0o600});await rename(file+'.tmp',file);
+  const receivedAt=typeof output.observedAt==='string'?Date.parse(output.observedAt):null;
+  const rows=output.rows as {symbol:string;error?:string|null;rawSourceTimestamp?:string|null}[];
+  const health={sessionDate,checkedAt:new Date().toISOString(),requestStartedAt:new Date(now).toISOString(),receivedAt:receivedAt===null?null:new Date(receivedAt).toISOString(),receiptGapMs:receivedAt!==null&&lastReceiptAt!==null?receivedAt-lastReceiptAt:null,requestDurationMs:Date.now()-now,error:output.error,rows:rows.length,missingSymbols:rows.filter(q=>q.error).map(q=>q.symbol),staleTradeSymbols:rows.filter(q=>{const t=quoteSourceTime(q.rawSourceTimestamp);return t===null||Date.now()-t>15000;}).map(q=>q.symbol),policy:'Successful REST receipt cadence and last-trade freshness are separate. Stale trades cannot fill paper orders.'};
+  if(receivedAt!==null)lastReceiptAt=receivedAt;
+  await appendFile(join(dir,'quote-health-'+sessionDate+'.jsonl'),JSON.stringify(health)+'\n',{mode:0o600});
+  // Commodity history and master downloads must never hold up the five-second quote poll.
+  if(!maintenance){maintenance=(async()=>{
+  if(masterDate!==sessionDate&&now>=masterRetry){masterRetry=now+300000;try{contracts=await fetchCommodityMaster(sessionDate);masterDate=sessionDate;historyEnd=0;commodityReport={sessionDate,contracts,candles:{},error:null,policy:'MCX manual paper only; 09:00–23:30 IST conservative weekday observation window. Holiday calendar unverified; stale quotes block fills. No margin estimate, delivery or automatic contract rollover.'};}catch{commodityReport.error='MCX_MASTER_UNAVAILABLE';}}
   const expected=Math.floor((now-10000)/FIVE)*FIVE;
   if(contracts.length&&mcx&&expected>historyEnd&&now>=historyRetry){historyRetry=now+60000;try{const map={...(commodityReport.candles as Record<string,unknown>)};for(const c of contracts){map[c.symbol]=await commodityCandles(c,sessionDate,env);await new Promise(r=>setTimeout(r,1100));}commodityReport.candles=map;commodityReport.observedAt=new Date().toISOString();commodityReport.error=null;historyEnd=expected;}catch(e){commodityReport.error=e instanceof Error&&/^DHAN_HTTP_\d+$/.test(e.message)?e.message:'MCX_HISTORY_UNAVAILABLE';}}
   const cf=join(dir,'commodities.json');await writeFile(cf+'.tmp',JSON.stringify(commodityReport)+'\n',{mode:0o600});await rename(cf+'.tmp',cf);
+  })().catch(()=>{console.error('QUOTE_MAINTENANCE_FAILED');}).finally(()=>{maintenance=null;});}
   await new Promise(r=>setTimeout(r,during||mcx?5000:15000));
  }
 
