@@ -13,7 +13,7 @@ export function validateReviews(raw:unknown,cases:RecoveryCase[]){const value=re
 // cache-write pricing, 32K conservative input-token bound and bounded total output/reasoning.
 export const REVIEW_RESERVATION_MICRO_USD=25_000;
 const MAX_REQUEST_BYTES=24_000,MAX_INPUT_TOKENS=32_000;
-function settings(env:NodeJS.ProcessEnv){
+export function settings(env:NodeJS.ProcessEnv){
  const model=env.OPENAI_REVIEW_MODEL??'gpt-4.1-mini-2025-04-14';
  if(model==='gpt-5.6-luna'||model==='gpt-6-luna'){
   if(env.OPENAI_REVIEW_REASONING_EFFORT!==undefined&&env.OPENAI_REVIEW_REASONING_EFFORT!=='low')throw Error('OPENAI_REVIEW_UNSUPPORTED_EFFORT');

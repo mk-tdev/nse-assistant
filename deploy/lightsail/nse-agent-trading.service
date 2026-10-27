@@ -1,0 +1,15 @@
+[Unit]
+Description=Independent agent-approved paper portfolio (no broker credentials or orders)
+Requires=docker.service
+After=docker.service nse-quotes.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/flock -n /run/lock/nse-agent-trading.lock /usr/bin/docker run --rm --init --name nse-agent-trading --read-only --cap-drop=ALL --security-opt=no-new-privileges --env RECORDER_DATA_DIR=/data --env AGENT_TRADING_DIR=/agent --env STRATEGY_LAB_DIR=/lab --env-file /etc/nse-assistant/reviewer.env --mount type=bind,source=/var/lib/nse-recorder,target=/data,readonly --mount type=bind,source=/var/lib/nse-strategy-lab,target=/lab,readonly --mount type=bind,source=/var/lib/nse-agent-trading,target=/agent --mount type=bind,source=/var/lib/nse-agent-budget,target=/budget nse-recorder:local node dist/agent-trading.js
+ExecStop=-/usr/bin/docker stop --time 30 nse-agent-trading
+Restart=always
+RestartSec=10
+TimeoutStopSec=40
+
+[Install]
+WantedBy=multi-user.target

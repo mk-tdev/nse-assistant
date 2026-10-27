@@ -1,0 +1,18 @@
+import {readFile,readdir} from 'node:fs/promises';
+import {existsSync} from 'node:fs';
+import {join} from 'node:path';
+import {DatabaseSync} from 'node:sqlite';
+import {day,validDate} from './model.js';
+import {positionsView} from './positions-view.js';
+import {summarizeOverview} from './strategy-overview.js';
+export async function agentView(dir:string,agentDir:string,session=day(Date.now())){
+ if(!validDate(session)||session>day(Date.now()))throw Error('AGENT_INVALID_SESSION');
+ let status:any={status:'Agent worker has not reported yet',limits:{quantity:10,maxOpenPositions:10,maxEntriesPerDay:20},paperOnly:true},news:any={items:[],feeds:[]};try{status=JSON.parse(await readFile(join(agentDir,'status.json'),'utf8'));}catch{}try{news=JSON.parse(await readFile(join(agentDir,'news.json'),'utf8'));}catch{}
+ let decisions:any[]=[],calls:any[]=[],contexts:any[]=[],sessions:string[]=[];
+ if(existsSync(join(agentDir,'agent.sqlite'))){const db=new DatabaseSync(join(agentDir,'agent.sqlite'),{readOnly:true});try{db.exec('PRAGMA query_only=ON; PRAGMA busy_timeout=1500;');decisions=db.prepare('SELECT * FROM agent_decisions WHERE session=? ORDER BY observed_at DESC LIMIT 300').all(session).map(r=>({...r,body:JSON.parse(String(r.body))}));calls=db.prepare('SELECT id,mode,started_at,status,error,input_json,output_json FROM agent_calls WHERE session=? ORDER BY started_at DESC LIMIT 100').all(session).map(r=>({...r,input:r.input_json?JSON.parse(String(r.input_json)):null,input_json:undefined,output:r.output_json?JSON.parse(String(r.output_json)):null,output_json:undefined}));contexts=db.prepare('SELECT observed_at,body FROM agent_context WHERE session=? ORDER BY observed_at DESC LIMIT 30').all(session).map(r=>({...r,body:JSON.parse(String(r.body))}));sessions=db.prepare('SELECT DISTINCT session FROM agent_calls UNION SELECT DISTINCT session FROM agent_decisions ORDER BY session DESC').all().map(r=>String(r.session));}finally{db.close();}}
+ // Only the independent agent execution store is selected; baseline paper files are never read here.
+ const view=await positionsView(join(agentDir,'no-baseline-ledgers'),agentDir,undefined);const positions=view.strategies.flatMap(s=>s.positions).filter(p=>p.session===session);let quotes:any=null;try{quotes=JSON.parse(await readFile(join(dir,'quotes.json'),'utf8'));}catch{}
+ // positionsView deliberately has no baseline data directory; enrich only its quotes and open marks separately.
+ const {valuePosition,freshQuote}=await import('./paper-valuation.js');for(const p of positions){const q=quotes?.sessionDate===session?quotes.rows?.find((q:any)=>q.symbol===p.symbol):undefined;const mark=freshQuote(q,Date.now());if(p.status==='open'){const value=valuePosition(p,q);p.grossPnl=value.grossPnl;p.costs=value.costs;}p.quote={price:mark?.price??null,current:Boolean(mark),sourceTime:mark?new Date(mark.sourceTime).toISOString():null,observedAt:mark?new Date(mark.observedAt).toISOString():null,kind:mark?'recent REST quote':'unavailable'};}
+ return {servedAt:new Date().toISOString(),selectedSession:session,sessions:[...new Set([day(Date.now()),session,...sessions,...positions.map(p=>p.session)])].sort().reverse(),status:{...status,healthy:Date.now()-Date.parse(status.observedAt)<20000},summary:summarizeOverview(positions),positions,decisions,calls,contexts,news:session===day(Date.now())?news:{items:[],feeds:[],policy:'Past decisions retain point-in-time news packets in their recorded call evidence. Current headlines are not substituted into historical sessions.'},policy:'Independent agent-approved paper portfolio. Existing baselines continue separately and are excluded from this page. Recorded opinions are explanations, not calibrated forecasts. Missing quote outcomes remain unresolved.'};
+}

@@ -5,7 +5,7 @@ After=docker.service
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/docker run --rm --init --name nse-reports --read-only --cap-drop=ALL --security-opt=no-new-privileges --env PORT=8787 --env REPORT_BIND=0.0.0.0 --env RECORDER_DATA_DIR=/data --env PAPER_CONTROL_DIR=/controls --env STRATEGY_LAB_DIR=/lab --publish 127.0.0.1:8787:8787 --mount type=bind,source=/var/lib/nse-recorder,target=/data,readonly --mount type=bind,source=/var/lib/nse-paper-controls,target=/controls --mount type=bind,source=/var/lib/nse-strategy-lab,target=/lab,readonly nse-recorder:local node dist/report-server.js
+ExecStart=/usr/bin/docker run --rm --init --name nse-reports --read-only --cap-drop=ALL --security-opt=no-new-privileges --env PORT=8787 --env REPORT_BIND=0.0.0.0 --env RECORDER_DATA_DIR=/data --env PAPER_CONTROL_DIR=/controls --env STRATEGY_LAB_DIR=/lab --env AGENT_TRADING_DIR=/agent --publish 127.0.0.1:8787:8787 --mount type=bind,source=/var/lib/nse-recorder,target=/data,readonly --mount type=bind,source=/var/lib/nse-paper-controls,target=/controls --mount type=bind,source=/var/lib/nse-strategy-lab,target=/lab,readonly --mount type=bind,source=/var/lib/nse-agent-trading,target=/agent,readonly nse-recorder:local node dist/report-server.js
 ExecStop=-/usr/bin/docker stop --time 10 nse-reports
 Restart=always
 RestartSec=10
