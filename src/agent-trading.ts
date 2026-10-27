@@ -1,3 +1,4 @@
+import {initializeShadows,updateShadows} from './agent-shadow.js';
 import {readFile,writeFile,rename,mkdir} from 'node:fs/promises';
 import {existsSync} from 'node:fs';
 import {join} from 'node:path';
@@ -34,7 +35,7 @@ function candidatesFrom(dir:string,labDir:string,session:string,now:number){
  return [...bySymbol.values()].filter(c=>c.decidedAt>=now-10*60000&&c.signalStart>=at(session,'09:30')&&c.signalStart+300000<=at(session,'14:30')&&c.stop>0&&c.rangeHigh>c.stop&&c.extension<=1).sort((a,b)=>b.relativeVolume-a.relativeVolume||a.extension-b.extension);
 }
 export async function agentLoop(env:NodeJS.ProcessEnv=process.env,preflight=false){
- const dir=env.RECORDER_DATA_DIR??'/data',agentDir=env.AGENT_TRADING_DIR??'/agent',labDir=env.STRATEGY_LAB_DIR??'/lab';await mkdir(agentDir,{recursive:true,mode:0o700});const store=new AgentStore(agentDir,env),execution=new StrategyLabStore(agentDir);const calendar=JSON.parse(await readFile(new URL('../deploy/lightsail/calendar-paper-2026.json',import.meta.url),'utf8')).sessions as string[];
+ const dir=env.RECORDER_DATA_DIR??'/data',agentDir=env.AGENT_TRADING_DIR??'/agent',labDir=env.STRATEGY_LAB_DIR??'/lab';await mkdir(agentDir,{recursive:true,mode:0o700});const store=new AgentStore(agentDir,env),execution=new StrategyLabStore(agentDir),shadow=new StrategyLabStore(join(agentDir,'shadow'));initializeShadows(shadow);const calendar=JSON.parse(await readFile(new URL('../deploy/lightsail/calendar-paper-2026.json',import.meta.url),'utf8')).sessions as string[];
  const membership=JSON.parse(await readFile(new URL('../deploy/lightsail/nifty50-2026-10-21.json',import.meta.url),'utf8'));const companies=Object.fromEntries(membership.constituents.map((c:any)=>[c.symbol,{name:c.name,industry:c.industry}]));
  let stopped=false,news:any=null,newsTask:Promise<void>|null=null,reviewTask:Promise<void>|null=null,lastNews=0,lastReview=0,lastBrief=0,lastSnapshot=0,status='Starting',market:any=null;
  process.once('SIGTERM',()=>{stopped=true;});process.once('SIGINT',()=>{stopped=true;});
@@ -67,6 +68,7 @@ export async function agentLoop(env:NodeJS.ProcessEnv=process.env,preflight=fals
    execution.run('live/'+session,'live',{session,configurations:[agentConfig],policy:'Independent agent-approved paper portfolio'},now);
    // Manage all stored open sessions after restarts; never manufacture an exit.
    for(const run of execution.runs().filter(r=>r.id.startsWith('live/'))){const date=run.id.slice(5);if(date===session&&during){execution.journal(session,rows);manageAgentPositions(execution,session,rows,now);}else if(now>=at(date,'15:35')&&execution.positions(run.id).some(p=>['open','pending-entry'].includes(p.status)))manageAgentPositions(execution,date,[],now);}
+   updateShadows(store.db,shadow,rows,now);
    if(canReview&&!reviewTask&&now-lastReview>60000){
     const u=await sessionUniverse(dir,session);market=marketEvidence(rows,u.nifty,now,companies);const entered=execution.positions('live/'+session).filter(p=>p.entry!==null);
     if(entered.length>=20)status='Daily 20-entry limit reached';else if(entered.filter(p=>p.status==='open').length>=10)status='10 open positions; no new approvals';else if(!market.ready)status='Insufficient fresh equity market breadth; waiting';else if(!news?.ready||now-Date.parse(news.observedAt)>20*60000)status='Required company/global news feeds unavailable or stale; waiting';else if(store.budgetStatus(now).exhausted)status='Shared $3/day allowance exhausted';else{
@@ -80,6 +82,6 @@ export async function agentLoop(env:NodeJS.ProcessEnv=process.env,preflight=fals
    await new Promise(r=>setTimeout(r,1000));
   }
   await newsTask;await reviewTask;
- }finally{execution.close();store.close();}
+ }finally{shadow.close();execution.close();store.close();}
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href)agentLoop(process.env,process.argv.includes('--preflight')).catch(()=>{console.error('AGENT_TRADING_WORKER_FAILED');process.exitCode=1;});

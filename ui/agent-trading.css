@@ -2,3 +2,5 @@
 
 .agent-page details{margin-top:10px}.agent-page summary{cursor:pointer;color:#8fe0bd}.agent-page pre{white-space:pre-wrap;word-break:break-word;max-width:600px;max-height:360px;overflow:auto;font-size:10px}
 .agent-page td.empty{position:static;inset:auto;display:table-cell;background:transparent;text-align:center}
+
+.shadow-summary{display:flex;flex-wrap:wrap;gap:12px;padding:0 20px 20px}.shadow-summary>div{background:#13212c;border:1px solid #2b4051;border-radius:7px;padding:10px 14px;min-width:120px}.shadow-summary small{display:block;font-size:9px;letter-spacing:.5px}.shadow-summary b{display:block;font:18px ui-monospace,monospace;margin-top:6px}.shadow-panel table{min-width:1150px}.shadow-panel td:first-child{min-width:210px}
