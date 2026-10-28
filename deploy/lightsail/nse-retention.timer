@@ -1,0 +1,11 @@
+[Unit]
+Description=Archive finalized NSE diagnostics daily after market hours
+
+[Timer]
+OnCalendar=*-*-* 19:30:00 UTC
+RandomizedDelaySec=60
+Persistent=true
+Unit=nse-retention.service
+
+[Install]
+WantedBy=timers.target

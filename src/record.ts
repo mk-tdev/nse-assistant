@@ -50,8 +50,8 @@ export async function main(args=process.argv.slice(2)){
     const watched=await loadWatchlists(date,master,process.env.PAPER_RESEARCH_ENABLED==='true'?process.env.RECORDER_WATCHLIST_PATH:undefined);
     const instruments=[...new Map([...baseline,...watched.instruments].map(i=>[i.securityId,i])).values()];
     store=new CandleStore(dbPath);await chmod(dbPath,0o600);
-    const recorder=new SessionRecorder(store,provider,instruments,date,mode,10,universe??undefined,process.env.RECORDER_FETCH_COMPLETED_ONLY==='true');
-    const baselineRecorder=new SessionRecorder(store,provider,baseline,date,mode,10,universe??undefined);
+    const recorder=new SessionRecorder(store,provider,instruments,date,mode,10,universe??undefined,process.env.RECORDER_FETCH_COMPLETED_ONLY==='true',false);
+    const baselineRecorder=new SessionRecorder(store,provider,baseline,date,mode,10,universe??undefined,false,false);
     let worker:PaperSessionWorker|undefined,paperSetupError:string|undefined;
     try {
       const config=await loadPaperConfig();
@@ -71,7 +71,7 @@ export async function main(args=process.argv.slice(2)){
       const target=join(dir,`${date}.json`),temp=target+'.tmp';
       await writeFile(temp,JSON.stringify(report,null,2)+'\n',{mode:0o600});await rename(temp,target);
       if('paper' in report){const paperTarget=join(dir,`${date}.paper.json`);await writeFile(paperTarget+'.tmp',JSON.stringify(report.paper,null,2)+'\n',{mode:0o600});await rename(paperTarget+'.tmp',paperTarget);}
-      store.saveReport(report);
+      store.saveSampledReport(report,options.has('--once')||mode==='mock'||now>=at(date,'15:30')+FIVE);
       console.log(JSON.stringify({observedAt:report.observedAt,sessionDate:date,mode,phase:report.phase,instruments:report.instruments.map(i=>({symbol:i.symbol,status:i.status,stored:i.storedCandles,expected:i.expectedCandles,missing:i.missingSlots.length,missingVolume:i.missingVolumeSlots.length,revised:i.revisedCandles,error:i.error})),report:target}));
       const unhealthy=report.instruments.some(i=>i.status==='fetch_error'||i.status==='missing_data');
       if(options.has('--once')||mode==='mock'||(!worker&&report.instruments.some(i=>i.error==='DHAN_HTTP_401'||i.error==='DHAN_HTTP_403'))||now>=at(date,'15:30')+FIVE){process.exitCode=unhealthy?2:0;break;}

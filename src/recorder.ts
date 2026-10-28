@@ -30,6 +30,7 @@ export function resolveWatchlist(items:Instrument[],symbols:readonly string[]=WA
 }
 export class CandleStore {
   readonly db:DatabaseSync;
+  private reportSample=new Map<string,{bucket:number;health:string;id:number;mutable:boolean}>();
   constructor(path:string,readOnly=false){
     this.db=new DatabaseSync(path,{readOnly});
     this.db.exec('PRAGMA busy_timeout=5000; PRAGMA temp_store=MEMORY;');
@@ -80,13 +81,27 @@ export class CandleStore {
     }catch(error){this.db.exec('ROLLBACK');throw error;}
   }
   saveReport(report:SessionReport){this.db.prepare('INSERT INTO polls(session,observed_at,report_json) VALUES(?,?,?)').run(report.sessionDate,Date.parse(report.observedAt),JSON.stringify(report));}
+  saveSampledReport(report:SessionReport,final=false){
+    const observed=Date.parse(report.observedAt),bucket=Math.floor(observed/FIVE);
+    const extra=report as SessionReport&{paper?:{errors?:string[];research?:{errors?:string[]}}};
+    const health=JSON.stringify([report.phase,report.instruments.map(i=>[i.symbol,i.status,i.error,i.missingSlots.length,i.missingVolumeSlots.length]),extra.paper?.errors,extra.paper?.research?.errors]);
+    const previous=this.reportSample.get(report.sessionDate),body=JSON.stringify(report);
+    // Preserve the first snapshot at every bucket/health transition and a fresh latest
+    // snapshot; subsequent unchanged polls replace only that bucket's rolling tail.
+    if(!final&&previous&&previous.bucket===bucket&&previous.health===health&&previous.mutable){
+      this.db.prepare('UPDATE polls SET observed_at=?,report_json=? WHERE id=? AND session=?').run(observed,body,previous.id,report.sessionDate);
+    }else{
+      const result=this.db.prepare('INSERT INTO polls(session,observed_at,report_json) VALUES(?,?,?)').run(report.sessionDate,observed,body);
+      this.reportSample.set(report.sessionDate,{bucket,health,id:Number(result.lastInsertRowid),mutable:Boolean(previous&&previous.bucket===bucket&&previous.health===health&&!final)});
+    }
+  }
   latestReport(session:string):SessionReport|null {
     const row=this.db.prepare('SELECT report_json FROM polls WHERE session=? ORDER BY id DESC LIMIT 1').get(session);
     return row?JSON.parse(String(row.report_json)):null;
   }
 }
 export class SessionRecorder {
-  constructor(readonly store:CandleStore,readonly provider:Provider,readonly instruments:Instrument[],readonly date:string,readonly mode:'live'|'mock',readonly settleSeconds=10,readonly universe?:Universe,readonly completedOnly=false){
+  constructor(readonly store:CandleStore,readonly provider:Provider,readonly instruments:Instrument[],readonly date:string,readonly mode:'live'|'mock',readonly settleSeconds=10,readonly universe?:Universe,readonly completedOnly=false,readonly persistReports=true){
     if(!validDate(date)||!Number.isFinite(settleSeconds)||settleSeconds<0||settleSeconds>60)throw new Error('RECORDER_INVALID_CONFIGURATION');
     store.bind(mode,provider.source);
   }
@@ -114,6 +129,6 @@ export class SessionRecorder {
       const success=this.store.lastSuccess(this.date,instrument.securityId);
       report.instruments.push({symbol:instrument.symbol,securityId:instrument.securityId,status:error?'fetch_error':expectedEnd===open?'waiting':missing.length||missingVolume.length?'missing_data':expectedEnd===close?'complete':'collecting',storedCandles:stored.length,expectedCandles:(expectedEnd-open)/FIVE,missingSlots:missing,missingVolumeSlots:missingVolume,lastSourceTimestamp:stored.length?iso(stored[stored.length-1]!.start):null,lagSeconds:stored.length?Math.max(0,(expectedEnd-stored[stored.length-1]!.start-FIVE)/1000):null,lastSuccessfulFetch:success===null?null:iso(success),latestExpectedCandleEnd:expectedEnd>open?iso(expectedEnd):null,excludedIncomplete:excluded,newCandles:added,revisedCandles:revised,error,timestampSemantics:batch?.candleStartVerified?'operator_verified_start':'unverified_start_interpretation'});
     }
-    this.store.saveReport(report);return report;
+    if(this.persistReports)this.store.saveReport(report);return report;
   }
 }

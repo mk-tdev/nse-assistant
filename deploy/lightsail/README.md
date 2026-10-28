@@ -60,3 +60,7 @@ Set `PAPER_EXIT_TIME_IST=15:10` in protected `paper.env` to apply the earlier pl
 ## Reasoning budget
 
 Set the protected reviewer environment to `OPENAI_REVIEW_MODEL=gpt-5.6-luna`, `OPENAI_REVIEW_REASONING_EFFORT=low`, `OPENAI_REVIEW_DAILY_BUDGET_USD=1` and `OPENAI_REVIEW_BUDGET_PATH=/data/reviewer-budget.sqlite`. Preserve the existing key. Back up and retain the budget database through restarts and rollbacks; do not delete it to retry requests. The app reserves 2.5 US cents per bounded request and stops LLM calls when the actual IST day's allowance is exhausted. Recording, deterministic recovery and paper rules continue.
+
+## Research-preserving retention
+
+See [cleanup policy and restore/export runbook](../../clean-up.md). `nse-retention.timer` runs the narrow Python retention job at 19:30 UTC (01:00 IST / 03:30 Singapore the following morning). Install both retention unit files and enable only the timer. The routine job archives older finalized redundant polling rows and compresses old inactive health logs; it does not prune quotes, trade/evidence ledgers, candles or spending counters. Open/pending/unresolved and explicitly pinned sessions are protected. Audits and verified recovery/export artifacts live root-private under `/var/lib/nse-retention/`. Offline dataset cleanup and physical compaction require separate explicit flags and are not in the timer.
