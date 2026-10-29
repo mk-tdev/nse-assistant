@@ -177,6 +177,7 @@ def research_export(run):
   if h.hexdigest()!=expected:raise RuntimeError('Research snapshot compression mismatch: '+name)
   inventories[name].update({'sqliteSha256':expected,'archiveSha256':sha(compressed)});target.unlink();emit('research_ledger_exported',name=name,bytes=compressed.stat().st_size)
  for path in DATA.glob('????-??-??*.json'):shutil.copy2(path,folder/('recorder-'+path.name))
+ for path in DATA.glob('margin-????-??-??.json'):shutil.copy2(path,folder/('recorder-'+path.name))
  # Capture complete health-log lines up to each file's initial byte length.
  for path in DATA.glob('quote-health-*.jsonl'):
   limit=path.stat().st_size;remaining=limit;target=folder/(path.name+'.gz')
@@ -187,7 +188,7 @@ def research_export(run):
     if line.endswith(b'\n'):out.write(line)
   target.chmod(0o600)
  for path in DATA.glob('quote-health-*.jsonl.gz'):shutil.copy2(path,folder/path.name)
- allowed={'PAPER_ENABLED','PAPER_MODE','PAPER_QUANTITY','PAPER_SCREENER_QUANTITY','PAPER_CALENDAR_PATH','PAPER_ACCEPT_SCHEDULED_CALENDAR','PAPER_ACCEPT_START_LABELS','PAPER_MAX_OBSERVATION_DELAY_SECONDS','PAPER_FEES_PER_SIDE','PAPER_SLIPPAGE_BPS','PAPER_RESEARCH_ENABLED','PAPER_EXIT_TIME_IST','RECORDER_UNIVERSE','RECORDER_UNIVERSE_PATH','RECORDER_WATCHLIST_PATH','RECORDER_FETCH_COMPLETED_ONLY','RECORDER_POLL_INTERVAL_SECONDS','OPENAI_REVIEW_MODEL','OPENAI_REVIEW_REASONING_EFFORT','OPENAI_REVIEW_DAILY_BUDGET_USD'}
+ allowed={'PAPER_ENABLED','PAPER_MODE','PAPER_QUANTITY','PAPER_SCREENER_QUANTITY','PAPER_CALENDAR_PATH','PAPER_ACCEPT_SCHEDULED_CALENDAR','PAPER_ACCEPT_START_LABELS','PAPER_MAX_OBSERVATION_DELAY_SECONDS','PAPER_FEES_PER_SIDE','PAPER_SLIPPAGE_BPS','PAPER_RESEARCH_ENABLED','PAPER_EXIT_TIME_IST','PAPER_LEGACY_SIGNALS_ONLY_FROM','RECORDER_UNIVERSE','RECORDER_UNIVERSE_PATH','RECORDER_WATCHLIST_PATH','RECORDER_FETCH_COMPLETED_ONLY','RECORDER_POLL_INTERVAL_SECONDS','OPENAI_REVIEW_MODEL','OPENAI_REVIEW_REASONING_EFFORT','OPENAI_REVIEW_DAILY_BUDGET_USD'}
  safe_config={}
  for path in [P('/etc/nse-assistant/paper.env'),P('/etc/nse-assistant/reviewer.env')]:
   if path.is_file():
