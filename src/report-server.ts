@@ -19,7 +19,7 @@ export function reportServer(dir:string,options:{controlDir?:string;origin?:stri
  const control=options.controlDir?new ControlStore(options.controlDir):undefined,csrf=randomBytes(32).toString('hex');
  const server=createServer(async(req,res)=>{
   res.setHeader('Cache-Control','no-store');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','no-referrer');
-  res.setHeader('Content-Security-Policy',"default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'");
+  res.setHeader('Content-Security-Policy',"default-src 'none'; script-src 'self'; img-src 'self'; manifest-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'");
 
   try{
    const url=new URL(req.url??'/', 'http://localhost'),path=url.pathname;
@@ -45,6 +45,8 @@ export function reportServer(dir:string,options:{controlDir?:string;origin?:stri
    if(path==='/api/control-session'){let healthy=false;if(control)try{const h=JSON.parse(await readFile(join(options.controlDir!,'health.json'),'utf8'));healthy=Date.now()-Date.parse(h.observedAt)<=20000;}catch{}json({enabled:Boolean(control),healthy,csrf:control?csrf:null,paperOnly:true});return;}
    if(path==='/api/watchlist/custom'){if(!control){json({enabled:false,pending:null,lastResult:null});return;}const latest=control.latest('custom-watchlist-update');json({enabled:true,pending:latest&&latest.status==='pending'?{requestId:latest.id,symbols:latest.body.symbols,submittedAt:new Date(latest.created_at).toISOString()}:null,lastResult:latest&&latest.status==='completed'&&latest.result?.symbols?{requestId:latest.id,symbols:latest.result.symbols}:null,policy:'Takes effect from the next scheduled pre-session freeze (08:50 IST), not the running session; frozen symbols then join every universe:\'all\' strategy alongside Nifty 50 and the auto-screened list.'});return;}
    if(path==='/api/paper/command'&&control){const id=url.searchParams.get('id')??'';if(!/^[a-f0-9-]{36}$/.test(id)){res.writeHead(400);res.end();return;}const result=control.get(id);if(!result){res.writeHead(404);res.end();return;}json(result);return;}
+   const brandAssets:Record<string,[string,string]>={'/assets/brand-mark.png':['brand-mark.png','image/png'],'/assets/favicon-16.png':['favicon-16.png','image/png'],'/assets/favicon-32.png':['favicon-32.png','image/png'],'/assets/apple-touch-icon.png':['apple-touch-icon.png','image/png'],'/assets/icon-192.png':['icon-192.png','image/png'],'/assets/icon-512.png':['icon-512.png','image/png'],'/favicon.ico':['favicon.ico','image/x-icon'],'/site.webmanifest':['site.webmanifest','application/manifest+json']};
+   if(brandAssets[path]){const [file,type]=brandAssets[path]!;res.setHeader('Content-Type',type);res.end(await readFile(new URL('../ui/assets/'+file,import.meta.url)));return;}
    if(path==='/capital-ui.js'){res.setHeader('Content-Type','application/javascript; charset=utf-8');res.end(capitalUiJs);return;}
    if(path==='/capital-ui.css'){res.setHeader('Content-Type','text/css; charset=utf-8');res.end(capitalUiCss);return;}
    if(path==='/date-controls.js'){res.setHeader('Content-Type','application/javascript; charset=utf-8');res.end(dateControlsJs);return;}
