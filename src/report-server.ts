@@ -8,7 +8,7 @@ import {join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {labView,labRun} from './strategy-lab-view.js';
 import {backtestSchema,toggleSchema} from './strategy-backtest.js';
-import {dashboardHtml as page,dashboardCss,dashboardJs as script,backtestHtml,backtestJs,controlsJs,review20261023Html,positionsHtml,positionsCss,positionsJs,overviewHtml,overviewCss,overviewJs,agentHtml,agentCss,agentJs,comparisonHtml,comparisonCss,comparisonJs,agentChartsJs} from './dashboard-assets.js';
+import {dashboardHtml as page,dashboardCss,dashboardJs as script,backtestHtml,backtestJs,controlsJs,review20261023Html,positionsHtml,positionsCss,positionsJs,overviewHtml,overviewCss,overviewJs,agentHtml,agentCss,agentJs,comparisonHtml,comparisonCss,comparisonJs,agentChartsJs,dateControlsJs,dateControlsCss,charcoalCss} from './dashboard-assets.js';
 import {randomBytes,timingSafeEqual} from 'node:crypto';
 import {ControlStore,exitSchema,entrySchema,customWatchlistSchema} from './paper-control-store.js';
 import {exitTargets} from './paper-console.js';
@@ -45,6 +45,9 @@ export function reportServer(dir:string,options:{controlDir?:string;origin?:stri
    if(path==='/api/control-session'){let healthy=false;if(control)try{const h=JSON.parse(await readFile(join(options.controlDir!,'health.json'),'utf8'));healthy=Date.now()-Date.parse(h.observedAt)<=20000;}catch{}json({enabled:Boolean(control),healthy,csrf:control?csrf:null,paperOnly:true});return;}
    if(path==='/api/watchlist/custom'){if(!control){json({enabled:false,pending:null,lastResult:null});return;}const latest=control.latest('custom-watchlist-update');json({enabled:true,pending:latest&&latest.status==='pending'?{requestId:latest.id,symbols:latest.body.symbols,submittedAt:new Date(latest.created_at).toISOString()}:null,lastResult:latest&&latest.status==='completed'&&latest.result?.symbols?{requestId:latest.id,symbols:latest.result.symbols}:null,policy:'Takes effect from the next scheduled pre-session freeze (08:50 IST), not the running session; frozen symbols then join every universe:\'all\' strategy alongside Nifty 50 and the auto-screened list.'});return;}
    if(path==='/api/paper/command'&&control){const id=url.searchParams.get('id')??'';if(!/^[a-f0-9-]{36}$/.test(id)){res.writeHead(400);res.end();return;}const result=control.get(id);if(!result){res.writeHead(404);res.end();return;}json(result);return;}
+   if(path==='/date-controls.js'){res.setHeader('Content-Type','application/javascript; charset=utf-8');res.end(dateControlsJs);return;}
+   if(path==='/date-controls.css'){res.setHeader('Content-Type','text/css; charset=utf-8');res.end(dateControlsCss);return;}
+   if(path==='/charcoal.css'){res.setHeader('Content-Type','text/css; charset=utf-8');res.end(charcoalCss);return;}
    if(path==='/comparison'){res.setHeader('Content-Type','text/html; charset=utf-8');res.end(comparisonHtml);return;}
    if(path==='/comparison.css'){res.setHeader('Content-Type','text/css; charset=utf-8');res.end(comparisonCss);return;}
    if(path==='/comparison.js'){res.setHeader('Content-Type','application/javascript; charset=utf-8');res.end(comparisonJs);return;}
