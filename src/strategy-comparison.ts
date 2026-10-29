@@ -1,3 +1,4 @@
+import {capitalMargin,readMarginSession} from './capital-margin.js';
 import {readFile,readdir} from 'node:fs/promises';
 import {join} from 'node:path';
 import {positionsView} from './positions-view.js';
@@ -29,6 +30,7 @@ export async function strategyComparison(dir:string,labDir:string|undefined,agen
  const files=await readdir(dir),available=[...new Set([...files.filter(f=>/^\d{4}-\d{2}-\d{2}\.json$/.test(f)).map(f=>f.slice(0,10)),...groups.flatMap(g=>g.positions.map(p=>p.session))])].filter(d=>validDate(d)&&d<=day(now)).sort();
  const end=to??from??available.at(-1)??day(now),start=from??to??available.slice(-3)[0]??end;
  if(!validDate(start)||!validDate(end)||start>end||end>day(now))throw Error('COMPARISON_INVALID_DATE_RANGE');
- const sessions=available.filter(d=>d>=start&&d<=end);
- return {servedAt:new Date(now).toISOString(),paperOnly:true,today:day(now),selection:{from:start,to:end},availableSessions:available,sessions,strategies:compareGroups(groups,sessions,now),errors:[...baseline.errors,...agent.errors.filter(e=>!e.startsWith('Quote snapshots'))],policy:'Independent live-paper experiments only, including the separate Agent Trading book. Shadows and backtests excluded. Positive-session counts use only fully resolved, closed, traded sessions; no-trade dates are not wins or losses. Partial totals exclude missing P&L. Different stock prices, position sizes and risk mean net ranking is not a risk-adjusted return. No missing candles or outcomes are invented.'};
+ const sessions=available.filter(d=>d>=start&&d<=end),strategies=compareGroups(groups,sessions,now);const margins=new Map(await Promise.all(sessions.map(async session=>[session,await readMarginSession(dir,session)] as const)));for(const strategy of strategies){const group=groups.find(g=>g.id===strategy.id)!;(strategy as any).capitalDays=sessions.map(session=>({session,...capitalMargin(group.positions.filter(p=>p.session===session),margins.get(session))}));}
+ const combinedCapitalDays=sessions.map(session=>({session,...capitalMargin(baseline.strategies.flatMap(g=>g.positions).filter(p=>p.session===session),margins.get(session))}));
+ return {combinedCapitalDays,servedAt:new Date(now).toISOString(),paperOnly:true,today:day(now),selection:{from:start,to:end},availableSessions:available,sessions,strategies,errors:[...baseline.errors,...agent.errors.filter(e=>!e.startsWith('Quote snapshots'))],policy:'Independent live-paper experiments only, including the separate Agent Trading book. Shadows and backtests excluded. Positive-session counts use only fully resolved, closed, traded sessions; no-trade dates are not wins or losses. Partial totals exclude missing P&L. Different stock prices, position sizes and risk mean net ranking is not a risk-adjusted return. No missing candles or outcomes are invented.'};
 }

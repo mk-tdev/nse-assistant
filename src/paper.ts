@@ -13,6 +13,7 @@ export type PaperCalendar = {
   independentlyVerified: boolean;
 };
 export type PaperConfig = {
+  signalsOnlyFrom?:string;
   exitTime?: '15:10'|'15:15';
   variant?: 'range-hold'|'range-failure-exit'|'agent-recovery';
   mode: PaperMode;
@@ -34,7 +35,7 @@ export const paperDefaults = (calendar: PaperCalendar): PaperConfig => ({
 export type Observation = { candle: Candle; observedAt: number; source: string; sourceTime: number; issues: string[] };
 export type PaperState = {
   id: string; symbol: string; session: string; strategy: string; mode: PaperMode;
-  status: 'blocked' | 'no-signal' | 'pending-entry' | 'open' | 'closed';
+  status: 'blocked' | 'no-signal' | 'pending-entry' | 'open' | 'closed' | 'signal-only';
   reasons: string[]; signal: number | null; entryAt: number | null; entry: number | null;
   stop: number | null; target: number | null; exitAt: number | null; exit: number | null;
   exitReason: string | null; grossPnl: number | null; netPnl: number | null;
@@ -50,7 +51,7 @@ export class PaperLedger {
   readonly db: DatabaseSync;
   readonly configHash: string;
   constructor(path: string, readonly config: PaperConfig) {
-    if (config.exitTime!==undefined&&!['15:10','15:15'].includes(config.exitTime) || !['strict','approximate-research'].includes(config.mode) || !Number.isSafeInteger(config.quantity) || config.quantity < 1 ||
+    if (config.signalsOnlyFrom!==undefined&&!validDate(config.signalsOnlyFrom) || config.exitTime!==undefined&&!['15:10','15:15'].includes(config.exitTime) || !['strict','approximate-research'].includes(config.mode) || !Number.isSafeInteger(config.quantity) || config.quantity < 1 ||
       !Number.isFinite(config.maxObservationDelayMs) || config.maxObservationDelayMs < 0 ||
       !validDate(config.calendar.coverageFrom) || !validDate(config.calendar.coverageTo) || config.calendar.coverageFrom>config.calendar.coverageTo ||
       config.calendar.sessions.some(d=>!validDate(d)||d<config.calendar.coverageFrom||d>config.calendar.coverageTo) ||
@@ -156,7 +157,7 @@ export class PaperLedger {
       assumptions:{calendar:this.config.calendar,timestampSemanticsVerified:this.config.timestampSemanticsVerified,
         acceptStartLabelsForResearch:this.config.acceptStartLabelsForResearch,
         acceptScheduledCalendarForResearch:this.config.acceptScheduledCalendarForResearch,
-        vwapMethod:'HLC3 completed-bar approximation in research mode only',quantity:this.config.quantity,
+        legacySignalsOnlyFrom:this.config.signalsOnlyFrom??null,executionPolicy:this.config.signalsOnlyFrom&&session>=this.config.signalsOnlyFrom?'Legacy candle fills paused; technical signals retained for independent quote-based strategies':'Original legacy candle-fill research',vwapMethod:'HLC3 completed-bar approximation in research mode only',quantity:this.config.quantity,
         plannedExitTimeIST:this.config.exitTime??'15:15',plannedExitConfirmationIST:this.config.exitTime==='15:10'?'15:15':'15:20',plannedExitPrice:'planned candle open, admitted only after that candle completes',
         feesPerSide:this.config.feesPerSide,slippageBps:this.config.slippageBps,maxObservationDelayMs:this.config.maxObservationDelayMs},
       baselineProvenance:this.db.prepare('SELECT evaluation_session,symbol,COUNT(*) AS observations,MAX(observed_at) AS last_observed_at FROM paper_baselines WHERE evaluation_session=? GROUP BY evaluation_session,symbol').all(session),
@@ -188,7 +189,7 @@ export class PaperLedger {
       s.reasons=unique;if(s.status!=='open' && s.status!=='pending-entry' && s.status!=='closed')s.status='blocked';
       return persist();
     };
-    if(s.status==='closed') return persist();
+    if(s.status==='closed'||s.status==='signal-only') return persist();
     const cfg=this.config, cal=cfg.calendar, research=cfg.mode==='approximate-research';
     const plannedExitTime=cfg.exitTime??'15:15',plannedExit=at(session,plannedExitTime),plannedExitComplete=plannedExit+FIVE;
     const gates:string[]=[];
@@ -296,7 +297,7 @@ export class PaperLedger {
           previous20:previous,calendar:cal,exactQualification:false,configHash:this.configHash,
           baselineObservations:history.filter(h=>previous.includes(day(h.candle.start))&&minute(h.candle.start)===minute(t)),
         });
-        if(qualifies){s.status='pending-entry';s.signal=t;s.stop=low;}
+        if(qualifies){s.signal=t;s.stop=low;if(cfg.signalsOnlyFrom&&session>=cfg.signalsOnlyFrom){s.status='signal-only';s.reasons=['legacy_candle_fills_paused_signals_preserved'];s.cursor=t;this.event(s,'signal-only',now,t+FIVE,'execution_paused',{effectiveFrom:cfg.signalsOnlyFrom,reason:s.reasons[0]});return persist();}s.status='pending-entry';}
       }
       s.cursor=t;
     }
