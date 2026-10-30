@@ -1,3 +1,4 @@
+import {strategyVisible} from './strategy-visibility.js';
 import {DatabaseSync} from 'node:sqlite';
 import {existsSync} from 'node:fs';
 import {readFile} from 'node:fs/promises';
@@ -8,9 +9,10 @@ import {freshQuote,quoteSourceTime,valuePosition,type QuoteRow} from './paper-va
 const legacyNames:Record<string,string>={baseline:'Original Nifty ORB / legacy','screener-orb':'Screener ORB / legacy','range-hold':'Range hold / legacy','range-failure-exit':'Range failure exit / legacy','agent-recovery':'Agent recovery / legacy','mcx-manual':'MCX manual paper'};
 const finite=(v:unknown):v is number=>typeof v==='number'&&Number.isFinite(v);
 /** Independent read-only view: entered live-paper positions only, never scanner selections or backtest runs. */
-export async function positionsView(dir:string,labDir?:string,control?:ControlStore,now=Date.now()){
+export async function positionsView(dir:string,labDir?:string,control?:ControlStore,now=Date.now(),retainedOnly=false){
  const errors:string[]=[],groups=new Map<string,{id:string;name:string;positions:any[]}>(),seen=new Set<string>();
  const collect=(id:string,s:any)=>{
+  if(retainedOnly&&!strategyVisible(id)&&s.status!=='open')return;
   if(!['open','closed'].includes(s.status)||!finite(s.entry)||s.entry<=0)return;
   const key=id+'/'+s.id;if(seen.has(key))return;seen.add(key);
   if(!groups.has(id))groups.set(id,{id,name:s.config?.name??labStrategies.find(c=>c.id===id)?.name??legacyNames[id]??id,positions:[]});

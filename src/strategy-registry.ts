@@ -14,7 +14,7 @@ export const labStrategies:LabStrategy[]=[
  {...common,id:'midday-consolidation-10-v1',name:'Midday consolidation / fresh 30-minute box / 10 shares',enabled:false,universe:'all',maxExtension:null,sizing:'fixed-10',signalWindow:{start:'11:00',end:'14:00'},setup:'midday-consolidation'},
  {...common,id:'orb-retest-10-v1',name:'ORB breakout retest and hold / 10 shares',enabled:false,universe:'all',maxExtension:null,sizing:'fixed-10',signalWindow:{start:'09:35',end:'14:00'},setup:'breakout-retest'},
  {...common,id:'orb-extension-risk-v1',name:'Optional equal-risk ORB / extension cap',enabled:false,universe:'all',maxExtension:1,sizing:'equal-risk',maxOpenPositions:4},
- {...common,id:'ema-pullback-10-v1',name:'8/21 EMA pullback / core rule / 10 shares',enabled:true,universe:'all',maxExtension:null,sizing:'fixed-10',signalWindow:{start:'09:45',end:'14:30'},setup:'ema-pullback'},
+ {...common,id:'ema-pullback-10-v1',name:'8/21 EMA pullback / core rule / 10 shares',enabled:false,universe:'all',maxExtension:null,sizing:'fixed-10',signalWindow:{start:'09:45',end:'14:30'},setup:'ema-pullback'},
  {...common,id:'ema-core-nifty-10-v2',name:'8/21 EMA / core-session history v2 / Nifty 50 / 10 shares',version:2,enabled:false,universe:'nifty50',maxExtension:null,sizing:'fixed-10',signalWindow:{start:'09:45',end:'14:30'},setup:'ema-pullback',emaHistory:{sessionEnd:'15:15',lookbackSessions:3,minimumBars:200}},
 ];
 export const strategyHash=(s:LabStrategy)=>{const {enabled,...parameters}=s;return createHash('sha256').update(JSON.stringify(parameters)).digest('hex');};

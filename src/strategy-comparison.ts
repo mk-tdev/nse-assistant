@@ -22,8 +22,8 @@ export function compareGroups(groups:{id:string;name:string;positions:any[]}[],s
    quantities:[...new Set(positions.map(p=>p.quantity))].sort((a,b)=>a-b),closedWinRate:closed.length?round(100*closed.filter(p=>p.realizedNet>0).length/closed.length):null};
  }).filter(g=>g.summary.entries).sort((a,b)=>b.profitableSessions-a.profitableSessions||b.completeSessions-a.completeSessions||(b.summary.netPnl??-Infinity)-(a.summary.netPnl??-Infinity));
 }
-export async function strategyComparison(dir:string,labDir:string|undefined,agentDir:string,control:ControlStore|undefined,from?:string,to?:string,now=Date.now()){
- const baseline=await positionsView(dir,labDir,control,now),agent=await positionsView(join(agentDir,'no-baseline-ledgers'),agentDir,undefined,now);
+export async function strategyComparison(dir:string,labDir:string|undefined,agentDir:string,control:ControlStore|undefined,from?:string,to?:string,now=Date.now(),retainedOnly=false){
+ const baseline=await positionsView(dir,labDir,control,now,retainedOnly),agent=await positionsView(join(agentDir,'no-baseline-ledgers'),agentDir,undefined,now);
  let quotes:any=null;try{quotes=JSON.parse(await readFile(join(dir,'quotes.json'),'utf8'));}catch{}
  for(const g of agent.strategies)for(const p of g.positions){const q=quotes?.sessionDate===p.session?quotes.rows?.find((q:any)=>q.symbol===p.symbol):undefined,mark=freshQuote(q,now);p.quote={price:mark?.price??null,current:Boolean(mark),sourceTime:null,observedAt:null,kind:mark?'recent REST quote':'unavailable'};if(p.status==='open'){const value=valuePosition(p,q,now);p.grossPnl=value.grossPnl;p.costs=value.costs;p.netPnl=value.estimatedNetPnl;}}
  const groups=[...baseline.strategies,...agent.strategies.map(g=>({...g,name:'Agent Trading / approved / 10 shares'}))];
